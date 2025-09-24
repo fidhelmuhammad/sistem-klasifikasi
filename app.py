@@ -40,9 +40,9 @@ def halaman_informasi():
 def halaman_pelatihan():
     st.title("⚙️ Pelatihan Model Naive Bayes")
 
-    uploaded_file = st.file_uploader("📂 Upload dataset (CSV)", type="csv")
+    uploaded_file = st.file_uploader("📂 Upload dataset (CSV)", type=["csv"])
 
-    if uploaded_file:
+    if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
         st.write("### Data Sample")
         st.dataframe(df.head())
@@ -114,9 +114,9 @@ def halaman_pelatihan():
 def halaman_prediksi():
     st.title("🔮 Prediksi Penerima Bantuan Sosial")
 
-    uploaded_model = st.file_uploader("📂 Upload model (.joblib)", type="joblib")
+    uploaded_model = st.file_uploader("📂 Upload model (.joblib)", type=["joblib"])
 
-    if uploaded_model:
+    if uploaded_model is not None:
         data = joblib.load(uploaded_model)
         pipeline = data["pipeline"]
         classes = data["classes"]
@@ -144,8 +144,8 @@ def halaman_prediksi():
 
         else:
             st.subheader("Upload Data untuk Prediksi Batch")
-            file_csv = st.file_uploader("Upload file CSV", type="csv")
-            if file_csv:
+            file_csv = st.file_uploader("Upload file CSV", type=["csv"])
+            if file_csv is not None:
                 df_new = pd.read_csv(file_csv)
                 st.write("### Data yang diupload")
                 st.dataframe(df_new.head())
