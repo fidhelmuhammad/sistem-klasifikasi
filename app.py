@@ -1,133 +1,136 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import joblib
+import os
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import LabelEncoder
 
-# ------------------------------
-# Halaman Dashboard
-# ------------------------------
+# ==== KONFIGURASI APLIKASI ====
+st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
+
+# ==== FILE MODEL ====
+MODEL_FILE = "model_bansos.pkl"
+HISTORY_FILE = "riwayat.csv"
+
+# ==== HALAMAN DASHBOARD ====
 def halaman_dashboard():
-    st.title("📊 Dashboard")
-    st.subheader("Sistem Klasifikasi Penerima Bantuan Sosial - Desa Cikembar")
+    st.title("📊 Dashboard Sistem Klasifikasi Bantuan Sosial")
+    st.write("""
+    Sistem ini dibuat untuk membantu Desa Cikembar dalam menentukan siapa yang **berhak**
+    dan siapa yang **belum layak** menerima **Bantuan Sosial** menggunakan algoritma
+    **Naive Bayes**.
+    
+    ### Tujuan
+    - Membantu perangkat desa dalam pengambilan keputusan.
+    - Meningkatkan transparansi penyaluran bantuan.
+    - Mengurangi kesalahan subjektif.
 
-    st.markdown("""
-    ### Deskripsi  
-    Sistem ini membantu menentukan siapa saja yang **berhak** menerima bantuan sosial di Desa Cikembar
-    menggunakan algoritma **Naive Bayes**.
-
-    ### Tujuan  
-    - Membantu proses klasifikasi penerima bansos secara objektif.  
-    - Mempercepat pengolahan data penerima bantuan.  
-    - Mengurangi kesalahan subjektif dalam penentuan penerima.  
-
-    ### Manfaat  
-    - Transparansi dalam penyaluran bansos.  
-    - Efisiensi waktu dan biaya.  
-    - Meningkatkan keadilan dalam distribusi bantuan sosial.  
+    ### Manfaat
+    - Cepat dalam klasifikasi penerima.
+    - Data dapat dikelola dan diupdate.
+    - Riwayat prediksi tersimpan otomatis.
     """)
 
-
-# ------------------------------
-# Halaman Prediksi
-# ------------------------------
+# ==== HALAMAN PREDIKSI ====
 def halaman_prediksi():
     st.title("🔮 Prediksi Penerima Bantuan Sosial")
 
-    uploaded_model = st.file_uploader("📂 Upload model (.joblib)", type=["joblib"])
+    if not os.path.exists(MODEL_FILE):
+        st.warning("⚠️ Model belum dilatih. Silakan latih model dulu di halaman **Dashboard**.")
+        return
 
-    if uploaded_model is not None:
-        data = joblib.load(uploaded_model)
-        pipeline = data["pipeline"]
-        classes = data["classes"]
+    # Load model
+    model_data = joblib.load(MODEL_FILE)
+    model = model_data["model"]
+    label_encoders = model_data["encoders"]
+    target_encoder = model_data["target"]
 
-        st.success("✅ Model berhasil dimuat")
+    pilihan = st.radio("Pilih metode input:", ["Input Manual", "Upload File"])
 
-        option = st.radio("Pilih metode input:", ["Input Manual", "Upload CSV/Excel"])
-
-        # --- Input manual ---
-        if option == "Input Manual":
-            umur = st.number_input("Umur", min_value=18, max_value=100, value=30)
+    if pilihan == "Input Manual":
+        col1, col2 = st.columns(2)
+        with col1:
+            nama = st.text_input("Nama")
             pekerjaan = st.selectbox("Pekerjaan", ["Petani", "Buruh", "Pedagang", "Tidak Bekerja"])
-            penghasilan = st.number_input("Penghasilan (Rp)", min_value=0, value=1000000)
+            pendidikan = st.selectbox("Pendidikan", ["SD", "SMP", "SMA", "S1"])
+        with col2:
+            penghasilan = st.number_input("Penghasilan per Bulan (Rp)", min_value=0)
+            tanggungan = st.number_input("Jumlah Tanggungan", min_value=0, step=1)
 
-            input_df = pd.DataFrame({
-                "umur": [umur],
-                "pekerjaan": [pekerjaan],
-                "penghasilan": [penghasilan]
-            })
+        if st.button("Prediksi"):
+            data = pd.DataFrame([[nama, pekerjaan, pendidikan, penghasilan, tanggungan]],
+                                columns=["Nama", "Pekerjaan", "Pendidikan", "Penghasilan", "Tanggungan"])
+            # Encode
+            for col in ["Pekerjaan", "Pendidikan"]:
+                data[col] = label_encoders[col].transform(data[col])
 
-            if st.button("Prediksi"):
-                pred = pipeline.predict(input_df)[0]
-                hasil = classes[pred]
+            pred = model.predict(data.drop(columns=["Nama"]))[0]
+            hasil = target_encoder.inverse_transform([pred])[0]
 
-                st.success(f"Hasil Prediksi: **{hasil}**")
+            st.success(f"✅ {nama} diprediksi: **{hasil}**")
 
-                if "riwayat" not in st.session_state:
-                    st.session_state.riwayat = []
-                st.session_state.riwayat.append({"Input": input_df.to_dict(orient="records")[0], "Hasil": hasil})
+            # Simpan riwayat
+            simpan_riwayat(data, hasil)
 
-        # --- Upload CSV/Excel ---
-        else:
-            file_data = st.file_uploader("📂 Upload file data (CSV/Excel)", type=["csv", "xlsx", "xls"])
-            if file_data is not None:
-                try:
-                    if file_data.name.endswith(".csv"):
-                        df_new = pd.read_csv(file_data)
-                    else:
-                        df_new = pd.read_excel(file_data, engine="openpyxl")
-
-                    st.write("### Data yang diupload")
-                    st.dataframe(df_new.head())
-
-                    if st.button("Prediksi Batch"):
-                        preds = pipeline.predict(df_new)
-                        df_new["Prediksi"] = [classes[p] for p in preds]
-
-                        st.write("### Hasil Prediksi")
-                        st.dataframe(df_new)
-
-                        if "riwayat" not in st.session_state:
-                            st.session_state.riwayat = []
-                        for row in df_new.to_dict(orient="records"):
-                            st.session_state.riwayat.append({"Input": row, "Hasil": row["Prediksi"]})
-
-                        csv = df_new.to_csv(index=False).encode("utf-8")
-                        st.download_button(
-                            label="💾 Download Hasil Prediksi",
-                            data=csv,
-                            file_name="hasil_prediksi.csv",
-                            mime="text/csv"
-                        )
-                except Exception as e:
-                    st.error(f"Gagal membaca file: {e}")
-
-
-# ------------------------------
-# Halaman Riwayat Prediksi
-# ------------------------------
-def halaman_riwayat():
-    st.title("📝 Riwayat Prediksi")
-
-    if "riwayat" not in st.session_state or len(st.session_state.riwayat) == 0:
-        st.warning("Belum ada riwayat prediksi.")
     else:
-        df_history = pd.DataFrame(st.session_state.riwayat)
-        st.dataframe(df_history)
+        file_data = st.file_uploader("📂 Upload file CSV/Excel", type=["csv", "xlsx", "xls"])
+        if file_data is not None:
+            try:
+                if file_data.name.endswith(".csv"):
+                    df_new = pd.read_csv(file_data)
+                else:
+                    df_new = pd.read_excel(file_data, engine="openpyxl")
 
-        if st.button("🗑️ Hapus Riwayat"):
-            st.session_state.riwayat = []
-            st.success("Riwayat berhasil dihapus.")
+                st.write("📑 Data yang diupload:")
+                st.dataframe(df_new.head())
 
+                for col in ["Pekerjaan", "Pendidikan"]:
+                    if col in df_new.columns:
+                        df_new[col] = label_encoders[col].transform(df_new[col])
 
-# ------------------------------
-# Main App
-# ------------------------------
-st.sidebar.title("Navigasi")
-halaman = st.sidebar.radio("Pilih Halaman", ["Dashboard", "Prediksi", "Riwayat Prediksi"])
+                preds = model.predict(df_new.drop(columns=["Nama"]))
+                df_new["Hasil Prediksi"] = target_encoder.inverse_transform(preds)
 
-if halaman == "Dashboard":
+                st.success("✅ Prediksi selesai")
+                st.dataframe(df_new)
+
+                # Simpan ke riwayat
+                for _, row in df_new.iterrows():
+                    simpan_riwayat(row.to_frame().T, row["Hasil Prediksi"])
+
+            except Exception as e:
+                st.error(f"Gagal membaca file: {e}")
+
+# ==== HALAMAN RIWAYAT ====
+def halaman_riwayat():
+    st.title("📜 Riwayat Prediksi")
+    if os.path.exists(HISTORY_FILE):
+        df = pd.read_csv(HISTORY_FILE)
+        st.dataframe(df)
+    else:
+        st.info("Belum ada riwayat prediksi.")
+
+# ==== SIMPAN RIWAYAT ====
+def simpan_riwayat(df, hasil):
+    if isinstance(df, pd.DataFrame):
+        df["Hasil"] = hasil
+    else:
+        df = pd.DataFrame(df)
+        df["Hasil"] = hasil
+
+    if os.path.exists(HISTORY_FILE):
+        df.to_csv(HISTORY_FILE, mode="a", index=False, header=False)
+    else:
+        df.to_csv(HISTORY_FILE, index=False)
+
+# ==== MAIN MENU ====
+menu = st.sidebar.radio("Navigasi", ["Dashboard", "Prediksi", "Riwayat Prediksi"])
+
+if menu == "Dashboard":
     halaman_dashboard()
-elif halaman == "Prediksi":
+elif menu == "Prediksi":
     halaman_prediksi()
-elif halaman == "Riwayat Prediksi":
+else:
     halaman_riwayat()
