@@ -2,14 +2,6 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import matplotlib.pyplot as plt
-from sklearn.naive_bayes import GaussianNB
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, ConfusionMatrixDisplay
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 # ------------------------------
 # Halaman Dashboard
@@ -71,18 +63,21 @@ def halaman_prediksi():
 
                 st.success(f"Hasil Prediksi: **{hasil}**")
 
-                # Simpan ke riwayat
                 if "riwayat" not in st.session_state:
                     st.session_state.riwayat = []
                 st.session_state.riwayat.append({"Input": input_df.to_dict(orient="records")[0], "Hasil": hasil})
 
         else:
-            file_data = st.file_uploader("Upload file data (CSV/Excel)", type=["csv", "xlsx", "xls"])
+            file_data = st.file_uploader("📂 Upload file data (CSV/Excel)", type=["csv", "xlsx", "xls"])
             if file_data is not None:
-                if file_data.name.endswith(".csv"):
-                    df_new = pd.read_csv(file_data)
-                else:
-                    df_new = pd.read_excel(file_data)
+                try:
+                    if file_data.name.endswith(".csv"):
+                        df_new = pd.read_csv(file_data)
+                    else:
+                        df_new = pd.read_excel(file_data, engine="openpyxl")
+                except Exception as e:
+                    st.error(f"Gagal membaca file: {e}")
+                    return
 
                 st.write("### Data yang diupload")
                 st.dataframe(df_new.head())
@@ -94,13 +89,11 @@ def halaman_prediksi():
                     st.write("### Hasil Prediksi")
                     st.dataframe(df_new)
 
-                    # Simpan ke riwayat
                     if "riwayat" not in st.session_state:
                         st.session_state.riwayat = []
                     for row in df_new.to_dict(orient="records"):
                         st.session_state.riwayat.append({"Input": row, "Hasil": row["Prediksi"]})
 
-                    # Download hasil
                     csv = df_new.to_csv(index=False).encode("utf-8")
                     st.download_button(
                         label="💾 Download Hasil Prediksi",
@@ -121,6 +114,9 @@ def halaman_riwayat():
     else:
         df_history = pd.DataFrame(st.session_state.riwayat)
         st.dataframe(df_history)
+        if st.button("🗑️ Hapus Riwayat"):
+            st.session_state.riwayat = []
+            st.success("Riwayat berhasil dihapus.")
 
 
 # ------------------------------
