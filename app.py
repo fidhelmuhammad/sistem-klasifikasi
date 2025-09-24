@@ -4,13 +4,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 
-# Konfigurasi halaman utama
+# ===============================
+# Konfigurasi dasar
+# ===============================
 st.set_page_config(page_title="Naive Bayes Bantuan Sosial", layout="wide")
 
-# Sidebar menu
-menu = st.sidebar.radio("Navigasi", ["🏠 Beranda", "📊 Pelatihan Model", "🔮 Prediksi Baru"])
-
-# Variabel global (untuk menyimpan model & fitur terpilih)
+# State untuk simpan model dan fitur
 if "model" not in st.session_state:
     st.session_state.model = None
 if "features" not in st.session_state:
@@ -19,46 +18,78 @@ if "target" not in st.session_state:
     st.session_state.target = None
 
 
-# ================= HALAMAN 1: BERANDA =================
+# ===============================
+# Sidebar Menu
+# ===============================
+menu = st.sidebar.radio(
+    "Navigasi", 
+    ["🏠 Beranda", "📊 Pelatihan Model", "🔮 Prediksi Baru"]
+)
+
+
+# ===============================
+# Halaman 1: Beranda
+# ===============================
 if menu == "🏠 Beranda":
     st.title("📊 Penerapan Algoritma Naïve Bayes")
     st.subheader("Klasifikasi Penerima Bantuan Sosial di Desa Cikembar")
 
     st.markdown("""
-    Sistem ini dibuat untuk membantu menentukan apakah warga **layak** atau **tidak layak** 
-    menerima bantuan sosial di Desa Cikembar berdasarkan data yang tersedia.  
-    
-    🔹 **Algoritma yang digunakan:** Naïve Bayes  
-    🔹 **Fitur utama:**  
-    1. Upload dataset  
-    2. Latih model & evaluasi performa  
-    3. Prediksi data baru  
+    Selamat datang di sistem klasifikasi penerima bantuan sosial berbasis **Naïve Bayes**.  
+    Sistem ini dapat membantu menentukan apakah warga **layak** atau **tidak layak** menerima bantuan.  
 
-    Silakan gunakan menu di **sidebar** untuk mengakses halaman lain.
+    **Fitur utama sistem:**
+    1. Upload dataset (CSV/Excel) atau gunakan dataset bawaan  
+    2. Latih model Naïve Bayes dan lihat hasil evaluasi  
+    3. Prediksi data baru dengan input manual  
+
+    👉 Silakan gunakan menu di **sidebar** untuk navigasi.
     """)
 
 
-# ================= HALAMAN 2: PELATIHAN MODEL =================
+# ===============================
+# Fungsi untuk load dataset
+# ===============================
+def load_dataset():
+    option = st.radio("Pilih sumber data:", ["Upload File", "Gunakan Dataset Bawaan"])
+
+    df = None
+    if option == "Upload File":
+        uploaded_file = st.file_uploader("Upload file CSV atau Excel", type=["csv", "xlsx"])
+        if uploaded_file:
+            if uploaded_file.name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file)
+    else:
+        # Ganti nama file sesuai dataset di repo GitHub kamu
+        df = pd.read_excel("dataset_penduduk_cikembar_enriched.xlsx")
+
+    return df
+
+
+# ===============================
+# Halaman 2: Pelatihan Model
+# ===============================
 elif menu == "📊 Pelatihan Model":
     st.header("📊 Pelatihan Model Naïve Bayes")
 
-    # Upload dataset
-    uploaded_file = st.file_uploader("Upload Dataset (CSV)", type="csv")
-
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
+    df = load_dataset()
+    if df is not None:
         st.write("### Preview Dataset")
         st.dataframe(df.head())
 
         target = st.selectbox("Pilih kolom target (label)", df.columns)
-        features = st.multiselect("Pilih kolom fitur", [col for col in df.columns if col != target])
+        features = st.multiselect("Pilih kolom fitur (predictors)", [col for col in df.columns if col != target])
 
         if features and target:
             X = df[features]
             y = df[target]
 
             # Split data
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.3, random_state=42
+            )
 
             # Model Naive Bayes
             model = GaussianNB()
@@ -72,23 +103,26 @@ elif menu == "📊 Pelatihan Model":
 
             # Evaluasi
             st.write("### Hasil Evaluasi Model")
-            st.write("Akurasi:", accuracy_score(y_test, y_pred))
+            st.write("Akurasi:", round(accuracy_score(y_test, y_pred), 3))
             st.write("Confusion Matrix")
             st.write(confusion_matrix(y_test, y_pred))
             st.write("Classification Report")
             st.text(classification_report(y_test, y_pred))
     else:
-        st.info("Silakan upload dataset terlebih dahulu.")
+        st.info("Silakan pilih dataset terlebih dahulu.")
 
 
-# ================= HALAMAN 3: PREDIKSI BARU =================
+# ===============================
+# Halaman 3: Prediksi Baru
+# ===============================
 elif menu == "🔮 Prediksi Baru":
     st.header("🔮 Prediksi Data Baru")
 
     if st.session_state.model is not None and st.session_state.features:
         input_data = []
+        st.write("Masukkan data sesuai fitur berikut:")
         for col in st.session_state.features:
-            val = st.number_input(f"Masukkan nilai untuk {col}", value=0.0)
+            val = st.number_input(f"{col}", value=0.0)
             input_data.append(val)
 
         if st.button("Prediksi"):
