@@ -5,10 +5,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import LabelEncoder
-import pickle
-import os
+import io
 from datetime import datetime
-import io  # Untuk handling download Excel
 
 # Konfigurasi halaman
 st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
@@ -29,13 +27,13 @@ if 'le_target' not in st.session_state:
 if 'dataset' not in st.session_state:
     st.session_state.dataset = None
 
-# Fungsi untuk membuat dataset dummy sesuai struktur baru
+# Fungsi untuk membuat dataset dummy
 @st.cache_data
 def load_dummy_data():
     data = {
         'Nama': ['Ahmad', 'Siti', 'Budi', 'Dewi', 'Eko', 'Fani', 'Gatot', 'Hani', 'Indra', 'Joko'],
         'Jenis Kelamin': ['Laki-laki', 'Perempuan', 'Laki-laki', 'Perempuan', 'Laki-laki', 'Perempuan', 'Laki-laki', 'Perempuan', 'Laki-laki', 'Laki-laki'],
-        'Desa': ['Cikembar', 'Cikembar', 'Cikembar', 'Cikembar', 'Cikembar', 'Cikembar', 'Cikembar', 'Cikembar', 'Cikembar', 'Cikembar'],
+        'Desa': ['Cikembar'] * 10,
         'Alamat': ['Jl. Merdeka 1', 'Jl. Sudirman 2', 'Jl. Gatot Subroto 3', 'Jl. Thamrin 4', 'Jl. Sudirman 5', 'Jl. Merdeka 6', 'Jl. Gatot Subroto 7', 'Jl. Thamrin 8', 'Jl. Sudirman 9', 'Jl. Merdeka 10'],
         'RT': [1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
         'RW': [1, 1, 2, 2, 1, 1, 2, 2, 1, 1],
@@ -55,11 +53,11 @@ def load_dummy_data():
     }
     return pd.DataFrame(data)
 
-# Fungsi untuk melatih model (disesuaikan dengan kolom baru)
+# Fungsi untuk melatih model
 def train_model(data):
     df = data.copy()
     
-    # Validasi kolom kategorikal (handle NaN)
+    # Validasi kolom kategorikal
     if 'Kepemilikan_Rumah' not in df.columns or len(df) == 0:
         st.error("Data tidak valid atau kolom 'Kepemilikan_Rumah' hilang.")
         return None, None, None, 0, {}
@@ -76,11 +74,10 @@ def train_model(data):
         st.error("Kolom 'Status_Kesejahteraan' harus hanya berisi 'Layak' atau 'Tidak Layak'.")
         return None, None, None, 0, {}
     
-    # Encoding untuk Kepemilikan_Rumah
+    # Encoding
     le_rumah = LabelEncoder()
     df['Kepemilikan_Rumah_encoded'] = le_rumah.fit_transform(df['Kepemilikan_Rumah'])
     
-    # Encoding untuk target
     le_target = LabelEncoder()
     df['Status_Kesejahteraan_encoded'] = le_target.fit_transform(df['Status_Kesejahteraan'])
     
@@ -91,6 +88,7 @@ def train_model(data):
         st.error("Data fitur atau target kosong setelah encoding.")
         return None, None, None, 0, {}
     
+    # Split data
     if len(df) >= 5:
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     else:
@@ -98,7 +96,7 @@ def train_model(data):
         X_test, y_test = X, y
         st.warning("Dataset kecil (<5 baris), menggunakan full data untuk training tanpa split evaluasi.")
     
-    # Train Naive Bayes
+    # Train model
     model = GaussianNB()
     model.fit(X_train, y_train)
     
@@ -112,14 +110,13 @@ def train_model(data):
     
     return model, le_rumah, le_target, accuracy, report
 
-# Fungsi untuk melakukan prediksi
+# Fungsi untuk prediksi single
 def predict_single(model, le_rumah, le_target, data):
     try:
-        # Validasi input numerik
+        # Validasi input
         if np.isnan(data['usia']) or np.isnan(data['pendapatan']) or np.isnan(data['jumlah_anggota']):
-            raise ValueError("Input numerik (usia, pendapatan, jumlah anggota) tidak valid.")
+            raise ValueError("Input numerik tidak valid.")
         
-        # Validasi input encoder
         if data['kepemilikan_rumah'] not in le_rumah.classes_:
             raise ValueError(f"Kepemilikan Rumah harus salah satu dari: {list(le_rumah.classes_)}")
         
@@ -131,23 +128,23 @@ def predict_single(model, le_rumah, le_target, data):
         
         prediksi = le_target.inverse_transform([prediksi_encoded])[0]
         
-        # Sesuaikan probabilitas berdasarkan classes_
+        # Mapping probabilitas
         class_to_idx = {cls: idx for idx, cls in enumerate(le_target.classes_)}
         prob_layak = prob[class_to_idx['Layak']]
         prob_tidak = prob[class_to_idx['Tidak Layak']]
         
         return prediksi, [prob_layak, prob_tidak]
     except KeyError:
-        st.error("❌ Label target tidak dikenali. Pastikan dataset memiliki 'Layak' dan 'Tidak Layak'.")
+        st.error("Label target tidak dikenali. Pastikan dataset memiliki 'Layak' dan 'Tidak Layak'.")
         return None, None
     except ValueError as e:
-        st.error(f"❌ Error prediksi: {e}")
+        st.error(f"Error prediksi: {e}")
         return None, None
     except Exception as e:
-        st.error(f"❌ Error tak terduga: {e}")
+        st.error(f"Error tak terduga: {e}")
         return None, None
 
-# Sidebar untuk navigasi
+# Sidebar navigasi
 st.sidebar.title("Navigasi Sistem")
 page = st.sidebar.selectbox("Pilih Halaman:", ["Dashboard Informasi", "Upload Dataset & Prediksi", "Riwayat Prediksi"])
 
@@ -176,5 +173,58 @@ if page == "Dashboard Informasi":
     
     st.markdown("---")
     
-    # Informasi Sistem
-    st.header("
+    st.header("📋 Deskripsi Sistem")
+    st.markdown("""
+    Sistem ini dirancang untuk mengklasifikasikan warga Desa Cikembar yang berhak menerima bantuan sosial 
+    berdasarkan data demografis dan ekonomi menggunakan algoritma Naive Bayes.
+    """)
+    
+    st.header("📊 Fitur yang Dianalisis")
+    features = [
+        "Usia Kepala Keluarga",
+        "Pendapatan Bulanan",
+        "Jumlah Anggota Keluarga", 
+        "Kepemilikan Rumah"
+    ]
+    
+    for i, feature in enumerate(features, 1):
+        st.write(f"{i}. {feature}")
+    
+    st.write("**Target:** Status_Kesejahteraan (Layak / Tidak Layak)")
+    
+    st.header("📈 Status Terkini")
+    if st.session_state.model:
+        st.success("✅ Model sudah dilatih dan siap digunakan untuk prediksi")
+    else:
+        st.warning("⚠️ Silakan upload dataset dan latih model terlebih dahulu")
+
+# Halaman 2: Upload Dataset & Prediksi
+elif page == "Upload Dataset & Prediksi":
+    st.title("📁 Upload Dataset & Prediksi")
+    
+    tab1, tab2 = st.tabs(["Upload Dataset", "Prediksi Manual"])
+    
+    with tab1:
+        st.header("Upload Dataset")
+        
+        uploaded_file = st.file_uploader("Pilih file dataset (CSV atau Excel)", type=['csv', 'xlsx', 'xls'])
+        
+        if uploaded_file is not None:
+            try:
+                file_extension = uploaded_file.name.split('.')[-1].lower()
+                if file_extension == 'csv':
+                    df = pd.read_csv(uploaded_file)
+                else:
+                    df = pd.read_excel(uploaded_file)
+                
+                # Konversi tipe data numerik
+                numeric_cols = ['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga']
+                for col in numeric_cols:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+                
+                # Validasi kolom
+                required_columns = ['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga', 'Kepemilikan_Rumah', 'Status_Kesejahteraan']
+                if not all(col in df.columns for col in required_columns):
+                    st.error(f"File harus memiliki kolom: {', '.join(required_columns)}. Kolom saat ini: {', '.join(df.columns)}")
+                    st.info("Pastikan nama
