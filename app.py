@@ -1,151 +1,187 @@
 import streamlit as st
 import pandas as pd
-import joblib
-import os
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score
+import pickle
+import os
 
-# === KONFIGURASI APLIKASI ===
-st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
+# Konfigurasi halaman
+st.set_page_config(page_title="Klasifikasi Penerima Bantuan Sosial", layout="wide")
 
-MODEL_FILE = "model_bansos.pkl"
-HISTORY_FILE = "riwayat.csv"
+# Fungsi untuk membuat dataset dummy (jika tidak ada file data)
+@st.cache_data
+def load_data():
+    # Dataset dummy untuk simulasi data warga Desa Cikembar
+    data = {
+        'usia_kepala_keluarga': [45, 30, 55, 40, 60, 35, 50, 28, 65, 42, 38, 52, 47, 33, 58],
+        'pendapatan_bulanan': [1500000, 800000, 2000000, 1200000, 500000, 900000, 1800000, 600000, 400000, 1100000, 700000, 2200000, 1300000, 850000, 450000],
+        'jumlah_anggota_keluarga': [4, 6, 3, 5, 2, 7, 4, 8, 1, 5, 6, 3, 4, 7, 2],
+        'memiliki_rumah': ['Tidak', 'Tidak', 'Ya', 'Tidak', 'Tidak', 'Tidak', 'Ya', 'Tidak', 'Tidak', 'Tidak', 'Tidak', 'Ya', 'Ya', 'Tidak', 'Tidak'],
+        'berhak_bantuan': [0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1]  # 1: Berhak, 0: Tidak Berhak
+    }
+    df = pd.DataFrame(data)
+    return df
 
-# ===== DASHBOARD =====
-def halaman_dashboard():
-    st.title("📊 Dashboard Sistem Klasifikasi Bantuan Sosial")
+# Fungsi untuk melatih model
+@st.cache_resource
+def train_model():
+    df = load_data()
+    
+    # Preprocessing
+    le_rumah = LabelEncoder()
+    df['memiliki_rumah_encoded'] = le_rumah.fit_transform(df['memiliki_rumah'])
+    
+    X = df[['usia_kepala_keluarga', 'pendapatan_bulanan', 'jumlah_anggota_keluarga', 'memiliki_rumah_encoded']]
+    y = df['berhak_bantuan']
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Train Naive Bayes
+    model = GaussianNB()
+    model.fit(X_train, y_train)
+    
+    # Evaluasi
+    y_pred = model.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    
+    # Simpan model
+    with open('naive_bayes_model.pkl', 'wb') as f:
+        pickle.dump(model, f)
+    
+    with open('label_encoder.pkl', 'wb') as f:
+        pickle.dump(le_rumah, f)
+    
+    return model, accuracy, classification_report(y_test, y_pred, output_dict=True)
+
+# Fungsi untuk memuat model
+@st.cache_resource
+def load_model():
+    if os.path.exists('naive_bayes_model.pkl'):
+        with open('naive_bayes_model.pkl', 'rb') as f:
+            model = pickle.load(f)
+        with open('label_encoder.pkl', 'rb') as f:
+            le_rumah = pickle.load(f)
+        return model, le_rumah
+    else:
+        return None, None
+
+# Sidebar untuk navigasi
+st.sidebar.title("Navigasi")
+page = st.sidebar.selectbox("Pilih Halaman:", ["Informasi Sistem", "Pelatihan Model", "Prediksi Hasil"])
+
+# Halaman 1: Informasi Sistem
+if page == "Informasi Sistem":
+    st.title("Klasifikasi Penerima Bantuan Sosial di Desa Cikembar menggunakan Algoritma Naive Bayes")
+    
+    st.header("Deskripsi Sistem")
     st.write("""
-    Sistem ini digunakan untuk menentukan siapa yang **berhak** dan siapa yang
-    **belum layak** menerima bantuan sosial di Desa Cikembar menggunakan
-    algoritma **Naive Bayes**.
+    Sistem ini dirancang untuk mengklasifikasikan warga Desa Cikembar yang berhak menerima bantuan sosial berdasarkan data demografis dan ekonomi mereka. 
+    Menggunakan algoritma Naive Bayes, sistem ini memproses fitur-fitur seperti usia kepala keluarga, pendapatan bulanan, jumlah anggota keluarga, 
+    dan status kepemilikan rumah untuk memprediksi apakah seorang warga layak mendapatkan bantuan atau tidak.
+    
+    Data yang digunakan bersifat simulasi untuk demonstrasi, tetapi dapat diganti dengan data real dari desa.
     """)
+    
+    st.header("Tujuan Sistem")
+    st.write("""
+    - Memberikan rekomendasi akurat untuk distribusi bantuan sosial agar tepat sasaran.
+    - Mengoptimalkan proses seleksi penerima bantuan menggunakan machine learning.
+    - Membantu pemerintah desa dalam pengambilan keputusan berbasis data untuk mengurangi kemiskinan dan ketidakadilan sosial.
+    """)
+    
+    st.header("Manfaat Sistem")
+    st.write("""
+    - **Efisiensi**: Mengurangi waktu dan biaya manual dalam verifikasi penerima bantuan.
+    - **Akurasi**: Algoritma Naive Bayes memberikan prediksi probabilistik yang andal berdasarkan asumsi independensi fitur.
+    - **Transparansi**: Sistem dapat menampilkan alasan prediksi, sehingga proses lebih transparan.
+    - **Skalabilitas**: Dapat diintegrasikan dengan data real-time untuk pemantauan berkelanjutan di Desa Cikembar.
+    """)
+    
+    st.image("https://via.placeholder.com/800x400?text=Desa+Cikembar")  # Placeholder image
 
-    st.subheader("📂 Upload Dataset untuk Melatih Model")
-    uploaded = st.file_uploader("Upload file CSV/Excel", type=["csv", "xlsx", "xls"])
-
-    if uploaded is not None:
-        if uploaded.name.endswith(".csv"):
-            df = pd.read_csv(uploaded)
+# Halaman 2: Pelatihan Model
+elif page == "Pelatihan Model":
+    st.title("Pelatihan Model Naive Bayes")
+    
+    if st.button("Latih Model"):
+        with st.spinner("Melatih model..."):
+            model, accuracy, report = train_model()
+            st.success("Model berhasil dilatih!")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Akurasi Model", f"{accuracy:.2%}")
+            with col2:
+                st.metric("Jumlah Data Pelatihan", len(load_data()))
+            
+            st.subheader("Laporan Klasifikasi")
+            st.write("Precision, Recall, dan F1-Score untuk kelas:")
+            st.json(report)
+            
+            st.subheader("Dataset yang Digunakan")
+            df = load_data()
+            st.dataframe(df)
+    
+    else:
+        model, le = load_model()
+        if model is not None:
+            st.info("Model sudah tersedia dari pelatihan sebelumnya. Akurasi: (Hitung ulang jika diperlukan).")
         else:
-            df = pd.read_excel(uploaded, engine="openpyxl")
+            st.warning("Belum ada model yang dilatih. Tekan tombol untuk melatih.")
 
-        st.write("📑 Data awal:")
-        st.dataframe(df.head())
-
-        target_col = st.selectbox("Pilih kolom target (label)", df.columns)
-
-        if st.button("Latih Model Naive Bayes"):
-            X = df.drop(columns=[target_col])
-            y = df[target_col]
-
-            # Encode kolom kategori
-            encoders = {}
-            for col in X.select_dtypes(include=["object"]).columns:
-                le = LabelEncoder()
-                X[col] = le.fit_transform(X[col])
-                encoders[col] = le
-
-            target_encoder = LabelEncoder()
-            y = target_encoder.fit_transform(y)
-
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
-            )
-
-            model = GaussianNB()
-            model.fit(X_train, y_train)
-
-            acc = accuracy_score(y_test, model.predict(X_test))
-            st.success(f"✅ Model berhasil dilatih. Akurasi: {acc:.2f}")
-
-            joblib.dump({"model": model, "encoders": encoders, "target": target_encoder}, MODEL_FILE)
-            st.info("Model tersimpan ke file `model_bansos.pkl`")
-
-# ===== SIMPAN RIWAYAT =====
-def simpan_riwayat(df):
-    if os.path.exists(HISTORY_FILE):
-        df.to_csv(HISTORY_FILE, mode="a", header=False, index=False)
-    else:
-        df.to_csv(HISTORY_FILE, index=False)
-
-# ===== PREDIKSI =====
-def halaman_prediksi():
-    st.title("🔮 Prediksi Penerima Bantuan Sosial")
-
-    if not os.path.exists(MODEL_FILE):
-        st.warning("⚠️ Model belum ada. Silakan latih model dulu di halaman Dashboard.")
-        return
-
-    model_data = joblib.load(MODEL_FILE)
-    model = model_data["model"]
-    encoders = model_data["encoders"]
-    target_encoder = model_data["target"]
-
-    pilihan = st.radio("Pilih metode input:", ["Input Manual", "Upload File"])
-
-    if pilihan == "Input Manual":
-        nama = st.text_input("Nama")
-        pekerjaan = st.selectbox("Pekerjaan", ["Petani", "Buruh", "Pedagang", "Tidak Bekerja"])
-        pendidikan = st.selectbox("Pendidikan", ["SD", "SMP", "SMA", "S1"])
-        penghasilan = st.number_input("Penghasilan per Bulan (Rp)", min_value=0)
-        tanggungan = st.number_input("Jumlah Tanggungan", min_value=0, step=1)
-
-        if st.button("Prediksi"):
-            data = pd.DataFrame([[pekerjaan, pendidikan, penghasilan, tanggungan]],
-                                columns=["Pekerjaan", "Pendidikan", "Penghasilan", "Tanggungan"])
-            for col in ["Pekerjaan", "Pendidikan"]:
-                data[col] = encoders[col].transform(data[col])
-            pred = model.predict(data)[0]
-            hasil = target_encoder.inverse_transform([pred])[0]
-
-            st.success(f"✅ {nama} diprediksi: **{hasil}**")
-
-            df_hist = pd.DataFrame([[nama, pekerjaan, pendidikan, penghasilan, tanggungan, hasil]],
-                                   columns=["Nama", "Pekerjaan", "Pendidikan", "Penghasilan", "Tanggungan", "Hasil"])
-            simpan_riwayat(df_hist)
-
-    else:
-        file_data = st.file_uploader("📂 Upload file CSV/Excel untuk prediksi", type=["csv", "xlsx", "xls"])
-        if file_data is not None:
-            if file_data.name.endswith(".csv"):
-                df_new = pd.read_csv(file_data)
-            else:
-                df_new = pd.read_excel(file_data, engine="openpyxl")
-
-            st.write("📑 Data yang diupload:")
-            st.dataframe(df_new.head())
-
-            for col in ["Pekerjaan", "Pendidikan"]:
-                if col in df_new.columns:
-                    df_new[col] = encoders[col].transform(df_new[col])
-
-            preds = model.predict(df_new.drop(columns=["Nama"]))
-            df_new["Hasil Prediksi"] = target_encoder.inverse_transform(preds)
-
-            st.success("✅ Prediksi selesai")
-            st.dataframe(df_new)
-
-            simpan_riwayat(
-                df_new[["Nama", "Pekerjaan", "Pendidikan", "Penghasilan", "Tanggungan", "Hasil Prediksi"]]
-            )
-
-# ===== RIWAYAT PREDIKSI =====
-def halaman_riwayat():
-    st.title("📜 Riwayat Prediksi")
-    if os.path.exists(HISTORY_FILE):
-        df = pd.read_csv(HISTORY_FILE)
-        st.dataframe(df)
-    else:
-        st.info("Belum ada riwayat prediksi.")
-
-# ===== MAIN MENU =====
-menu = st.sidebar.radio("Navigasi", ["Dashboard", "Prediksi", "Riwayat Prediksi"])
-
-if menu == "Dashboard":
-    halaman_dashboard()
-elif menu == "Prediksi":
-    halaman_prediksi()
-else:
-    halaman_riwayat()
+# Halaman 3: Prediksi Hasil
+elif page == "Prediksi Hasil":
+    st.title("Prediksi Penerima Bantuan Sosial")
+    
+    model, le_rumah = load_model()
+    if model is None:
+        st.warning("Model belum dilatih. Silakan latih model terlebih dahulu di halaman Pelatihan Model.")
+        st.stop()
+    
+    st.header("Input Data Warga")
+    col1, col2 = st.columns(2)
+    with col1:
+        usia = st.number_input("Usia Kepala Keluarga", min_value=18, max_value=100, value=40)
+        pendapatan = st.number_input("Pendapatan Bulanan (Rp)", min_value=0, max_value=5000000, value=1000000)
+        jumlah_anggota = st.number_input("Jumlah Anggota Keluarga", min_value=1, max_value=20, value=4)
+    
+    with col2:
+        memiliki_rumah = st.selectbox("Memiliki Rumah Sendiri?", ["Ya", "Tidak"])
+    
+    if st.button("Prediksi"):
+        # Preprocessing input
+        rumah_encoded = le_rumah.transform([memiliki_rumah])[0]
+        input_data = np.array([[usia, pendapatan, jumlah_anggota, rumah_encoded]])
+        
+        # Prediksi
+        prediksi = model.predict(input_data)[0]
+        prob = model.predict_proba(input_data)[0]
+        
+        st.header("Hasil Prediksi")
+        if prediksi == 1:
+            st.success("✅ **Berhak Menerima Bantuan Sosial**")
+            st.write("Warga ini layak mendapatkan bantuan berdasarkan kriteria: usia rendah, pendapatan rendah, keluarga besar, dan/atau tidak memiliki rumah.")
+        else:
+            st.error("❌ **Tidak Berhak / Belum Layak**")
+            st.write("Warga ini tidak memenuhi kriteria utama untuk bantuan saat ini. Saran: Periksa ulang data atau tunggu evaluasi lebih lanjut.")
+        
+        st.subheader("Probabilitas")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Probabilitas Berhak", f"{prob[1]:.2%}")
+        with col2:
+            st.metric("Probabilitas Tidak Berhak", f"{prob[0]:.2%}")
+        
+        # Contoh prediksi batch (opsional)
+        st.subheader("Contoh Prediksi untuk Beberapa Warga")
+        sample_data = load_data().sample(5)
+        sample_X = sample_data[['usia_kepala_keluarga', 'pendapatan_bulanan', 'jumlah_anggota_keluarga', 'memiliki_rumah_encoded']]
+        sample_pred = model.predict(sample_X)
+        sample_prob = model.predict_proba(sample_X)
+        sample_df = sample_data.copy()
+        sample_df['Prediksi'] = ['Berhak' if p == 1 else 'Tidak Berhak' for p in sample_pred]
+        sample_df['Prob Berhak'] = [f"{prob[1]:.2%}" for prob in sample_prob]
+        st.dataframe(sample_df[['usia_kepala_keluarga', 'pendapatan_bulanan', 'jumlah_anggota_keluarga', 'memiliki_rumah', 'Prediksi', 'Prob Berhak']])
