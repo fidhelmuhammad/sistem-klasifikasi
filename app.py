@@ -59,6 +59,15 @@ def load_dummy_data():
 def train_model(data):
     df = data.copy()
     
+    # Validasi kolom kategorikal
+    if df['Kepemilikan_Rumah'].nunique() > 2 or set(df['Kepemilikan_Rumah'].unique()) - {'Ya', 'Tidak'}:
+        st.error("Kolom 'Kepemilikan_Rumah' harus hanya berisi 'Ya' atau 'Tidak'.")
+        return None, None, None, 0, {}
+    
+    if df['Status_Kesejahteraan'].nunique() > 2 or set(df['Status_Kesejahteraan'].unique()) - {'Layak', 'Tidak Layak'}:
+        st.error("Kolom 'Status_Kesejahteraan' harus hanya berisi 'Layak' atau 'Tidak Layak'.")
+        return None, None, None, 0, {}
+    
     # Encoding untuk Kepemilikan_Rumah
     le_rumah = LabelEncoder()
     df['Kepemilikan_Rumah_encoded'] = le_rumah.fit_transform(df['Kepemilikan_Rumah'])
@@ -108,7 +117,7 @@ def predict_single(model, le_rumah, le_target, data):
         # Decode prediksi dan sesuaikan probabilitas berdasarkan urutan classes_
         prediksi = le_target.inverse_transform([prediksi_encoded])[0]
         
-        # Asumsi: classes_ urut alfabetis ('Layak'=0, 'Tidak Layak'=1), tapi konfirmasi
+        # Konfirmasi urutan: 'Layak' biasanya 0 (alfabetis), tapi cek
         if le_target.classes_[0] == 'Layak':
             prob_layak, prob_tidak = prob[0], prob[1]
         else:
@@ -224,21 +233,24 @@ elif page == "Upload Dataset & Prediksi":
                         if st.button("🚀 Latih Model dengan Dataset Ini"):
                             with st.spinner("Melatih model Naive Bayes..."):
                                 model, le_rumah, le_target, accuracy, report = train_model(df)
-                                st.session_state.model = model
-                                st.session_state.le_rumah = le_rumah
-                                st.session_state.le_target = le_target
-                                
-                                st.success(f"✅ Model berhasil dilatih dengan akurasi: {accuracy:.2%}")
-                                
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    st.metric("Akurasi Model", f"{accuracy:.2%}")
-                                with col2:
-                                    st.metric("Jumlah Data", len(df))
-                                
-                                # Tampilkan laporan singkat
-                                st.subheader("Laporan Klasifikasi")
-                                st.json(report)
+                                if model is not None:
+                                    st.session_state.model = model
+                                    st.session_state.le_rumah = le_rumah
+                                    st.session_state.le_target = le_target
+                                    
+                                    st.success(f"✅ Model berhasil dilatih dengan akurasi: {accuracy:.2%}")
+                                    
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.metric("Akurasi Model", f"{accuracy:.2%}")
+                                    with col2:
+                                        st.metric("Jumlah Data", len(df))
+                                    
+                                    # Tampilkan laporan singkat
+                                    st.subheader("Laporan Klasifikasi")
+                                    st.json(report)
+                                else:
+                                    st.error("❌ Gagal melatih model. Periksa data kategorikal.")
                                 
             except Exception as e:
                 st.error(f"❌ Error membaca file: {e}. Pastikan file tidak rusak dan format kolom benar.")
@@ -248,44 +260,4 @@ elif page == "Upload Dataset & Prediksi":
             **Format file yang diharapkan (kolom wajib):**
             - Usia_Kepala_Keluarga (number)
             - Pendapatan_Bulanan (number) 
-            - Jumlah_Anggota_Keluarga (number)
-            - Kepemilikan_Rumah (Ya/Tidak)
-            - Status_Kesejahteraan (Layak/Tidak Layak)
-            
-            **Kolom opsional lain:** Nama, Jenis Kelamin, Desa, Alamat, RT, RW, Pendidikan_Kepala_Keluarga, dll.
-            """)
-            dummy_df = load_dummy_data()
-            st.dataframe(dummy_df.head())
-            st.download_button(
-                label="📥 Download Contoh Dataset CSV",
-                data=dummy_df.to_csv(index=False).encode('utf-8'),
-                file_name='contoh_dataset_cikembar.csv',
-                mime='text/csv'
-            )
-            
-            # Download Excel menggunakan BytesIO
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                dummy_df.to_excel(writer, index=False, sheet_name='Data Warga')
-            buffer.seek(0)
-            st.download_button(
-                label="📥 Download Contoh Dataset Excel",
-                data=buffer.getvalue(),
-                file_name='contoh_dataset_cikembar.xlsx',
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            )
-    
-    with tab2:
-        st.header("Prediksi Manual")
-        
-        if st.session_state.model is None:
-            st.warning("⚠️ Silakan upload dataset dan latih model terlebih dahulu")
-        else:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                usia = st.number_input("Usia Kepala Keluarga", min_value=18, max_value=100, value=40)
-                pendapatan = st.number_input("Pendapatan Bulanan (Rp)", min_value=0, max_value=10000000, value=1500000)
-            
-            with col2:
-                jumlah_ang
+            - Jumlah_Angg
