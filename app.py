@@ -4,21 +4,40 @@ import pandas as pd
 import numpy as np
 import os
 import io
+import inspect
 from datetime import datetime
 
-from sklearn.model_selection import train_test_split
-from sklearn.compose import ColumnTransformer
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder
-from sklearn.impute import SimpleImputer
-from sklearn.naive_bayes import GaussianNB
-from sklearn.metrics import accuracy_score
-
 st.set_page_config(page_title="Sistem Klasifikasi Penerima Bantuan Sosial", layout="wide")
+
+# --- Coba import scikit-learn secara aman (tidak boleh crash aplikasi jika tidak tersedia) ---
+SKLEARN_AVAILABLE = True
+SKLEARN_IMPORT_ERROR = None
+SKLEARN_VERSION = None
+try:
+    import sklearn
+    from sklearn.model_selection import train_test_split
+    from sklearn.compose import ColumnTransformer
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import OneHotEncoder
+    from sklearn.impute import SimpleImputer
+    from sklearn.naive_bayes import GaussianNB
+    from sklearn.metrics import accuracy_score
+    SKLEARN_VERSION = sklearn.__version__
+except Exception as e:
+    SKLEARN_AVAILABLE = False
+    SKLEARN_IMPORT_ERROR = e
 
 # --------------------------
 # Helper functions
 # --------------------------
+def show_missing_sklearn_message():
+    st.error(
+        "Modul `scikit-learn` tidak ditemukan di environment. "
+        "Silakan pasang dependency terlebih dahulu:\n\n"
+        "`pip install -r requirements.txt` (atau `pip install scikit-learn`) "
+        "lalu restart app. Pesan error asli:\n\n"
+        f"```\n{SKLEARN_IMPORT_ERROR}\n```"
+    )
 
 def find_column_by_keywords(columns, keywords):
     """Return the first column name that contains any of the keywords (case-insensitive)."""
@@ -36,6 +55,7 @@ def read_uploaded_file(uploaded_file):
         if filename.endswith(".csv"):
             return pd.read_csv(uploaded_file)
         elif filename.endswith((".xls", ".xlsx")):
+            # openpyxl required for xlsx (listed in requirements)
             return pd.read_excel(uploaded_file, engine="openpyxl")
         else:
             raise ValueError("Format file tidak didukung. Unggah .csv atau .xlsx.")
@@ -46,7 +66,7 @@ def validate_dataset(df):
     """Checks presence of 'Status' and appropriate labels."""
     if df is None or df.shape[0] == 0:
         raise ValueError("Dataset kosong atau gagal dibaca.")
-    # Status column must exist exactly 'Status' (case-sensitive per requirement)
+    # Status column must exist exactly 'Status'
     if "Status" not in df.columns:
         raise ValueError("Kolom target 'Status' tidak ditemukan. Pastikan nama kolom tepat 'Status'.")
     allowed = set(df["Status"].dropna().unique())
@@ -58,18 +78,18 @@ def validate_dataset(df):
 def prepare_features(df, drop_cols=None):
     """Separate X and y and detect numerical & categorical features automatically (excluding drop_cols)."""
     if drop_cols is None: drop_cols = []
-    # target
     y = df["Status"].copy()
     X = df.drop(columns=["Status"]).copy()
-    # drop specified cols (like Nama, Kampung) from features
     X_for_model = X.drop(columns=[c for c in drop_cols if c in X.columns], errors='ignore')
-    # detect dtypes
     numeric_feats = X_for_model.select_dtypes(include=[np.number]).columns.tolist()
     cat_feats = X_for_model.select_dtypes(include=['object', 'category', 'bool']).columns.tolist()
     return X_for_model, y, numeric_feats, cat_feats, X
 
 def build_preprocessor(numeric_feats, cat_feats):
-    """Create ColumnTransformer with imputers and encoders."""
+    """Create ColumnTransformer with imputers and encoders; handle OneHotEncoder signature differences."""
+    if not SKLEARN_AVAILABLE:
+        raise RuntimeError("scikit-learn tidak tersedia")
+
     transformers = []
     if numeric_feats:
         num_pipeline = Pipeline([
@@ -77,28 +97,43 @@ def build_preprocessor(numeric_feats, cat_feats):
         ])
         transformers.append(("num", num_pipeline, numeric_feats))
     if cat_feats:
+        # Determine whether OneHotEncoder supports 'sparse_output' or 'sparse'
+        ohe_kwargs = {"handle_unknown": "ignore"}
+        try:
+            sig = inspect.signature(OneHotEncoder)
+            if 'sparse_output' in sig.parameters:
+                ohe_kwargs['sparse_output'] = False
+            else:
+                ohe_kwargs['sparse'] = False
+        except Exception:
+            # fallback
+            ohe_kwargs['sparse'] = False
+
         cat_pipeline = Pipeline([
             ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("onehot", OneHotEncoder(handle_unknown="ignore", sparse=False))
+            ("onehot", OneHotEncoder(**ohe_kwargs))
         ])
         transformers.append(("cat", cat_pipeline, cat_feats))
+
     if transformers:
         preprocessor = ColumnTransformer(transformers=transformers, remainder="drop")
     else:
-        preprocessor = None
+        # jika tidak ada fitur untuk diproses, gunakan passthrough (meskipun praktisnya training tak akan berguna)
+        preprocessor = "passthrough"
     return preprocessor
 
 def train_nb_model(X, y, numeric_feats, cat_feats):
     """Train pipeline with preprocessor and GaussianNB. Returns fitted pipeline and simple metrics."""
+    if not SKLEARN_AVAILABLE:
+        raise RuntimeError("scikit-learn tidak tersedia")
+
     preprocessor = build_preprocessor(numeric_feats, cat_feats)
-    # NB expects dense input; we ensure OneHotEncoder sparse=False
     clf = Pipeline([
         ("pre", preprocessor),
         ("nb", GaussianNB())
     ])
-    # split (careful with stratify - follow spec: do not stratify if minority too small)
+    # split (ikut spesifikasi: tanpa stratify jika minoritas terlalu kecil)
     try:
-        # decide stratify or not
         if min(y.value_counts()) >= 5:
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
         else:
@@ -106,32 +141,30 @@ def train_nb_model(X, y, numeric_feats, cat_feats):
     except Exception:
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=None)
 
+    # Fit
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
+    acc = None
+    try:
+        acc = float(accuracy_score(y_test, y_pred))
+    except Exception:
+        acc = None
     return clf, acc, (X_train, X_test, y_train, y_test)
 
 def explain_prediction_simple(df_original, status_series):
     """
     Build simple class-conditional frequency tables and numeric means to be used later for local explanations.
-    Returns:
-        - freq_tables: dict of {feature: DataFrame(counts / freq per class)}
-        - numeric_stats: dict of {feature: {class: mean}}
     """
     freq_tables = {}
     numeric_stats = {}
-    classes = status_series.unique()
     for col in df_original.columns:
         if col == "Status":
             continue
         if pd.api.types.is_numeric_dtype(df_original[col]):
             numeric_stats[col] = df_original.groupby("Status")[col].mean().to_dict()
         else:
-            # frequency per class
             freq = (df_original.groupby(["Status", col]).size().rename("count").reset_index())
-            # convert to pivot for quick lookup
             pivot = freq.pivot(index=col, columns="Status", values="count").fillna(0)
-            # convert to proportions per class:
             prop = pivot.copy()
             for c in prop.columns:
                 total = prop[c].sum()
@@ -145,9 +178,6 @@ def explain_prediction_simple(df_original, status_series):
 def feature_contributors_for_row(row, predicted_class, freq_tables, numeric_stats, other_class):
     """
     For a single row (Series), compute per-original-feature score favoring predicted_class.
-    - For categorical: use log(prop_pred + eps) - log(prop_other + eps)
-    - For numeric: compare distance to class means: (|x-mean_other| - |x-mean_pred|) normalized by std-like
-    Returns sorted list of (feature, score, reason_text)
     """
     eps = 1e-9
     scores = []
@@ -157,20 +187,16 @@ def feature_contributors_for_row(row, predicted_class, freq_tables, numeric_stat
             stats = numeric_stats[col]
             mean_pred = stats.get(predicted_class, np.nan)
             mean_other = stats.get(other_class, np.nan)
-            # if means nan, skip
             if pd.isna(mean_pred) or pd.isna(mean_other):
                 continue
-            # score: how much closer to predicted mean than other mean
             score = (abs(val - mean_other) - abs(val - mean_pred))
             reason = f"Nilai {val} lebih dekat ke rata-rata {predicted_class} ({mean_pred:.2f}) daripada {other_class} ({mean_other:.2f})" if score>0 else f"Nilai {val} tidak mendukung kuat {predicted_class}"
             scores.append((col, float(score), reason))
         else:
-            # categorical
             table = freq_tables.get(col)
             if table is None:
                 continue
             try:
-                # get proportions for that category value
                 if val not in table.index:
                     prop_pred = 0.0
                     prop_other = 0.0
@@ -182,19 +208,16 @@ def feature_contributors_for_row(row, predicted_class, freq_tables, numeric_stat
                 scores.append((col, float(score), reason))
             except Exception:
                 continue
-    # sort by descending score
     scores_sorted = sorted(scores, key=lambda x: x[1], reverse=True)
     return scores_sorted
 
 def save_archive(record, path="archive.csv"):
     """Append a prediction summary record to CSV archive and to session_state."""
-    cols = ["timestamp", "kampung", "num_layak", "num_tidak_layak", "details_path"]
     df_rec = pd.DataFrame([record])
     if os.path.exists(path):
         df_rec.to_csv(path, mode='a', header=False, index=False)
     else:
         df_rec.to_csv(path, index=False)
-    # also maintain in session state
     if "archive" not in st.session_state:
         st.session_state["archive"] = []
     st.session_state["archive"].append(record)
@@ -221,7 +244,7 @@ if "df" not in st.session_state:
 if "trained_pipeline" not in st.session_state:
     st.session_state["trained_pipeline"] = None
 if "feature_info" not in st.session_state:
-    st.session_state["feature_info"] = None  # (freq_tables, numeric_stats)
+    st.session_state["feature_info"] = None
 if "drop_cols_for_model" not in st.session_state:
     st.session_state["drop_cols_for_model"] = []
 if "last_training_summary" not in st.session_state:
@@ -246,6 +269,8 @@ if page == "Home":
     4. Hasil prediksi disimpan ke **Arsip/Riwayat** dan dapat diunduh.
     """)
     st.info("Catatan: kolom target harus bernama **'Status'** dan hanya berisi 'Layak' atau 'Tidak Layak'. Pastikan dataset juga memuat kolom nama warga (mengandung kata 'nama') dan kolom kampung/desa (mengandung kata 'kampung' atau 'desa').")
+    if not SKLEARN_AVAILABLE:
+        st.warning("scikit-learn tidak tersedia di environment. Halaman Training/Prediksi akan menampilkan instruksi pemasangan.")
 
 # --------------------------
 # Training
@@ -254,23 +279,24 @@ elif page == "Training":
     st.title("Halaman Training")
     st.markdown("Unggah dataset (.csv atau .xlsx). Kolom target harus bernama **Status** dan hanya berisi 'Layak' dan 'Tidak Layak'.")
 
+    if not SKLEARN_AVAILABLE:
+        show_missing_sklearn_message()
+        st.stop()
+
     uploaded_file = st.file_uploader("Upload file dataset (.csv / .xlsx)", type=["csv", "xls", "xlsx"])
     if uploaded_file is not None:
         try:
             df = read_uploaded_file(uploaded_file)
             st.session_state["df_raw"] = df.copy()
-            # Basic show
             st.write("Preview dataset (5 baris):")
             st.dataframe(df.head())
 
-            # Validate
             try:
                 validate_dataset(df)
             except Exception as e:
                 st.error(str(e))
                 st.stop()
 
-            # Try to find name & kampung columns
             name_col = find_column_by_keywords(df.columns, ["nama ", "nama", "name", "nm"])
             kampung_col = find_column_by_keywords(df.columns, ["kampung", "desa", "kelurahan", "village"])
             if name_col is None or kampung_col is None:
@@ -282,21 +308,17 @@ elif page == "Training":
                 st.success(f"Deteksi otomatis: Nama warga = '{name_col}', Kampung = '{kampung_col}'")
 
             if st.button("Mulai Training"):
-                # Validate again
                 if name_col is None or kampung_col is None:
                     st.error("Kolom nama warga atau kampung belum dipilih.")
                     st.stop()
 
-                # Store chosen drop columns for modeling
                 st.session_state["drop_cols_for_model"] = [name_col, kampung_col]
 
-                # Prepare features
                 X_for_model, y, numeric_feats, cat_feats, X_full = prepare_features(df, drop_cols=[name_col, kampung_col])
                 st.write(f"Jumlah baris: {df.shape[0]}; Jumlah fitur untuk model: {X_for_model.shape[1]}")
                 st.write("Fitur numerik terdeteksi:", numeric_feats)
                 st.write("Fitur kategorikal terdeteksi:", cat_feats)
 
-                # Train model
                 with st.spinner("Melatih model Naïve Bayes..."):
                     try:
                         clf_pipeline, acc, splits = train_nb_model(X_for_model, y, numeric_feats, cat_feats)
@@ -311,10 +333,9 @@ elif page == "Training":
                 st.session_state["last_training_summary"] = {
                     "n_rows": df.shape[0],
                     "class_counts": df["Status"].value_counts().to_dict(),
-                    "accuracy": float(acc)
+                    "accuracy": float(acc) if acc is not None else None
                 }
 
-                # prepare explanation tables
                 freq_tables, numeric_stats = explain_prediction_simple(df)
                 st.session_state["feature_info"] = (freq_tables, numeric_stats)
 
@@ -333,6 +354,10 @@ elif page == "Training":
 # --------------------------
 elif page == "Prediksi":
     st.title("Halaman Prediksi")
+    if not SKLEARN_AVAILABLE:
+        show_missing_sklearn_message()
+        st.stop()
+
     if st.session_state.get("df") is None or st.session_state.get("trained_pipeline") is None:
         st.warning("Belum ada model terlatih atau dataset. Silakan lakukan proses Training terlebih dahulu.")
         st.stop()
@@ -349,19 +374,15 @@ elif page == "Prediksi":
     kampung_selected = st.selectbox("Pilih Nama Kampung", options=kampungs)
 
     if st.button("Jalankan Prediksi untuk Kampung ini"):
-        # filter rows
         df_k = df[df[kampung_col] == kampung_selected].copy()
         if df_k.shape[0] == 0:
             st.warning("Tidak ada data untuk kampung yang dipilih.")
             st.stop()
 
-        # Prepare X for model (drop name and kampung)
         drop_cols = st.session_state["drop_cols_for_model"]
         X_for_model = df_k.drop(columns=[c for c in drop_cols if c in df_k.columns] + ["Status"], errors='ignore')
-        # Ensure columns order same as training pipeline expects:
-        # The pipeline's preprocessor expects the feature names present during training. We attempt to reorder/align.
+
         try:
-            # Predict
             preds = pipeline.predict(X_for_model)
         except Exception as e:
             st.error("Gagal memprediksi. Periksa apakah struktur kolom dataset cocok dengan saat training. Error: " + str(e))
@@ -370,7 +391,6 @@ elif page == "Prediksi":
         df_k = df_k.copy()
         df_k["Prediction"] = preds
 
-        # Display lists
         layak_df = df_k[df_k["Prediction"] == "Layak"]
         tidak_df = df_k[df_k["Prediction"] == "Tidak Layak"]
 
@@ -385,19 +405,16 @@ elif page == "Prediksi":
             if tidak_df.shape[0] > 0:
                 st.dataframe(tidak_df[[name_col]].reset_index(drop=True))
 
-        # Provide explanations (top 2 features) for each person (but keep UI reasonable — show top 3)
         st.markdown("### Penjelasan singkat mengapa tiap warga diklasifikasikan demikian (fitur teratas)")
         explanations = []
         other_class_map = {"Layak": "Tidak Layak", "Tidak Layak": "Layak"}
         max_show = st.number_input("Jumlah warga yang ingin ditunjukkan penjelasannya (per halaman):", min_value=1, max_value=100, value=10, step=1)
-        # iterate rows (limit to max_show)
         for idx, row in df_k.reset_index(drop=True).iterrows():
             if idx >= max_show:
                 break
             person_name = row[name_col] if name_col in row.index else f"Baris {idx}"
             pred = row["Prediction"]
             other = other_class_map[pred]
-            # compute contributors using original features (exclude name, kampung, target, prediction)
             row_features = row.drop(labels=[name_col, kampung_col, "Status", "Prediction"], errors='ignore')
             contributors = feature_contributors_for_row(row_features, pred, freq_tables, numeric_stats, other)
             top = contributors[:3]
@@ -414,10 +431,8 @@ elif page == "Prediksi":
                 "top_reasons": [r for (_, _, r) in top]
             })
 
-        # Save to archive (create details csv for kampung)
         timestamp = datetime.now().isoformat()
         details_filename = f"pred_{kampung_selected}_{timestamp.replace(':','-')}.csv"
-        # save full df_k with predictions
         try:
             df_k.to_csv(details_filename, index=False)
             details_path = details_filename
@@ -437,7 +452,6 @@ elif page == "Prediksi":
         except Exception as e:
             st.error("Gagal menyimpan arsip: " + str(e))
 
-        # Offer download of full details
         csv_buf = io.StringIO()
         df_k.to_csv(csv_buf, index=False)
         csv_bytes = csv_buf.getvalue().encode()
@@ -449,17 +463,14 @@ elif page == "Prediksi":
 elif page == "Arsip/Riwayat":
     st.title("Arsip / Riwayat Prediksi")
     archive_df = load_archive()
-    # merge with session_state archive if exists (session entries may be duplicates — keep both)
     if len(st.session_state.get("archive", [])) > 0:
         extra = pd.DataFrame(st.session_state["archive"])
         if not extra.empty:
             archive_df = pd.concat([archive_df, extra], ignore_index=True)
-            # drop duplicates
             archive_df = archive_df.drop_duplicates(subset=["timestamp", "kampung"], keep="first")
     if archive_df.empty:
         st.info("Belum ada hasil prediksi yang diarsipkan.")
     else:
         st.dataframe(archive_df.sort_values(by="timestamp", ascending=False).reset_index(drop=True))
-        # allow download whole archive
         csv_bytes = archive_df.to_csv(index=False).encode()
         st.download_button("Unduh arsip lengkap (CSV)", data=csv_bytes, file_name="arsip_prediksi.csv", mime="text/csv")
