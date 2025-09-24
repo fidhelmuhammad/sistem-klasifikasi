@@ -17,28 +17,6 @@ if "features" not in st.session_state:
 if "target" not in st.session_state:
     st.session_state.target = None
 
-
-# ===============================
-# Fungsi untuk load dataset
-# ===============================
-def load_dataset():
-    option = st.radio("Pilih sumber data:", ["Upload File", "Gunakan Dataset Bawaan"])
-
-    df = None
-    if option == "Upload File":
-        uploaded_file = st.file_uploader("Upload file CSV atau Excel", type=["csv", "xlsx"])
-        if uploaded_file:
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
-    else:
-        # ganti sesuai nama file dataset bawaan kamu
-        df = pd.read_excel("dataset_penduduk_cikembar_enriched.xlsx")
-
-    return df
-
-
 # ===============================
 # Sidebar Menu
 # ===============================
@@ -46,7 +24,6 @@ menu = st.sidebar.radio(
     "Navigasi", 
     ["🏠 Beranda", "📊 Pelatihan Model", "🔮 Prediksi Baru"]
 )
-
 
 # ===============================
 # Halaman 1: Beranda
@@ -60,13 +37,12 @@ if menu == "🏠 Beranda":
     Sistem ini dapat membantu menentukan apakah warga **layak** atau **tidak layak** menerima bantuan.  
 
     **Fitur utama sistem:**
-    1. Upload dataset (CSV/Excel) atau gunakan dataset bawaan  
+    1. Upload dataset (CSV/Excel)  
     2. Latih model Naïve Bayes dan lihat hasil evaluasi  
     3. Prediksi data baru dengan input manual  
 
     👉 Silakan gunakan menu di **sidebar** untuk navigasi.
     """)
-
 
 # ===============================
 # Halaman 2: Pelatihan Model
@@ -74,8 +50,14 @@ if menu == "🏠 Beranda":
 elif menu == "📊 Pelatihan Model":
     st.header("📊 Pelatihan Model Naïve Bayes")
 
-    df = load_dataset()
-    if df is not None:
+    uploaded_file = st.file_uploader("Upload file CSV atau Excel", type=["csv", "xlsx"])
+
+    if uploaded_file:
+        if uploaded_file.name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+
         st.write("### Preview Dataset")
         st.dataframe(df.head())
 
@@ -109,8 +91,7 @@ elif menu == "📊 Pelatihan Model":
             st.write("Classification Report")
             st.text(classification_report(y_test, y_pred))
     else:
-        st.info("Silakan pilih dataset terlebih dahulu.")
-
+        st.info("Silakan upload dataset terlebih dahulu.")
 
 # ===============================
 # Halaman 3: Prediksi Baru
