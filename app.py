@@ -3,162 +3,144 @@ import pandas as pd
 import io
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.naive_bayes import GaussianNB
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-import matplotlib.pyplot as plt
-import seaborn as sns
+from sklearn.metrics import accuracy_score, classification_report
 
-# -------------------------
-# Konfigurasi Halaman
-# -------------------------
-st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
+# Konfigurasi halaman
+st.set_page_config(page_title="Klasifikasi Bantuan Sosial", page_icon="📑", layout="wide")
 
-st.title("📊 Penerapan Algoritma Naïve Bayes")
-st.write("Aplikasi ini digunakan untuk klasifikasi penerima bantuan sosial di Desa Cikembar.")
-
-# -------------------------
-# Upload Dataset
-# -------------------------
-uploaded_file = st.file_uploader(
-    "📂 Upload file CSV atau Excel (.csv / .xls / .xlsx)",
-    type=["csv", "xls", "xlsx"]
+# Sidebar untuk navigasi
+menu = st.sidebar.radio(
+    "Navigasi",
+    ["🏠 Home", "📊 Pelatihan Model", "🔮 Prediksi Data Baru"]
 )
 
-if uploaded_file:
-    # baca dataset
-    if uploaded_file.name.endswith(".csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
+# ================================
+# Halaman 1: Home
+# ================================
+if menu == "🏠 Home":
+    st.title("📑 Penerapan Algoritma Naïve Bayes")
+    st.subheader("Klasifikasi Penerima Bantuan Sosial di Desa Cikembar")
 
-    # -------------------------
-    # Preview Dataset
-    # -------------------------
-    st.subheader("📄 Preview Dataset")
-    st.dataframe(df.head())
+    st.markdown("""
+    Selamat datang di sistem klasifikasi penerima bantuan sosial.  
+    Gunakan menu di sidebar untuk:
+    - 📊 **Pelatihan Model** → upload dataset, pilih label & fitur, latih model.
+    - 🔮 **Prediksi Data Baru** → uji model dengan data input manual.
+    """)
 
-    # Info dataset
-    st.subheader("ℹ️ Info singkat dataset")
-    buffer = io.StringIO()
-    df.info(buf=buffer)
-    info_str = buffer.getvalue()
-    st.text(info_str)
+# ================================
+# Halaman 2: Pelatihan Model
+# ================================
+elif menu == "📊 Pelatihan Model":
+    st.title("📊 Pelatihan Model Naïve Bayes")
 
-    st.write("Jumlah data:", df.shape[0])
-    st.write("Jumlah kolom:", df.shape[1])
-    st.write("Jumlah missing value tiap kolom:")
-    st.write(df.isnull().sum())
+    uploaded_file = st.file_uploader(
+        "Upload file CSV atau Excel (.csv / .xls / .xlsx)",
+        type=["csv", "xls", "xlsx"]
+    )
 
-    # -------------------------
-    # Pilih Target
-    # -------------------------
-    target_col = st.selectbox("🎯 Pilih kolom target (label)", df.columns)
-
-    if target_col:
-        # cek validitas target
-        class_counts = df[target_col].value_counts()
-        invalid_classes = class_counts[class_counts < 2]
-
-        if len(invalid_classes) > 0:
-            st.error(
-                f"Kolom target **{target_col}** tidak valid karena ada kelas dengan jumlah < 2:\n\n{invalid_classes}"
-            )
+    if uploaded_file:
+        # Load dataset
+        try:
+            if uploaded_file.name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file)
+        except Exception as e:
+            st.error(f"Gagal membaca file: {e}")
             st.stop()
 
-        # -------------------------
-        # Pilih Fitur
-        # -------------------------
+        st.subheader("🔍 Preview Dataset")
+        st.dataframe(df.head())
+
+        # Info dataset
+        buffer = io.StringIO()
+        df.info(buf=buffer)
+        st.text(buffer.getvalue())
+
+        # Pilih kolom target
+        target_col = st.selectbox("🎯 Pilih kolom target (label)", df.columns)
+
+        # Pilih fitur
         feature_cols = st.multiselect(
-            "📌 Pilih kolom fitur (predictors)",
-            [col for col in df.columns if col != target_col]
+            "🧩 Pilih kolom fitur (predictors)",
+            [c for c in df.columns if c != target_col]
         )
 
-        if feature_cols:
-            st.write("Fitur terpilih:", feature_cols)
+        if st.button("🚀 Latih Model"):
+            if not feature_cols or not target_col:
+                st.error("Pilih fitur dan target terlebih dahulu!")
+                st.stop()
 
-            # siapkan X, y
             X = df[feature_cols]
             y = df[target_col]
 
-            # identifikasi kolom kategorikal & numerik
-            cat_cols = X.select_dtypes(include=["object"]).columns.tolist()
-            num_cols = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
-
-            # -------------------------
-            # Preprocessing
-            # -------------------------
-            try:
-                onehot = OneHotEncoder(handle_unknown="ignore", sparse_output=False)  # sklearn >=1.4
-            except TypeError:
-                onehot = OneHotEncoder(handle_unknown="ignore", sparse=False)         # sklearn <1.4
-
-            cat_transformer = Pipeline([
-                ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("onehot", onehot)
-            ])
-            num_transformer = Pipeline([
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler())
-            ])
-            preprocessor = ColumnTransformer([
-                ("cat", cat_transformer, cat_cols),
-                ("num", num_transformer, num_cols)
-            ])
-
-            # -------------------------
-            # Model Pipeline
-            # -------------------------
-            model = Pipeline([
-                ("preprocessor", preprocessor),
-                ("classifier", GaussianNB())
-            ])
-
-            # -------------------------
-            # Split Data
-            # -------------------------
+            # Split data
             try:
                 X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.3, random_state=42, stratify=y
+                    X, y, test_size=0.2, random_state=42, stratify=y
                 )
             except ValueError:
-                st.warning(
-                    "⚠️ Stratify gagal karena ada kelas dengan jumlah terlalu sedikit. Data dibagi tanpa stratify."
-                )
+                st.warning("⚠️ Stratify gagal karena ada kelas dengan jumlah terlalu sedikit. Data dibagi tanpa stratify.")
                 X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.3, random_state=42
+                    X, y, test_size=0.2, random_state=42
                 )
 
-            # -------------------------
-            # Training
-            # -------------------------
+            # Pisahkan numerik & kategorikal
+            num_cols = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
+            cat_cols = X.select_dtypes(include=["object"]).columns.tolist()
+
+            preprocessor = ColumnTransformer([
+                ("num", StandardScaler(), num_cols),
+                ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)
+            ])
+
+            model = Pipeline([
+                ("preprocess", preprocessor),
+                ("clf", GaussianNB())
+            ])
+
+            # Train
             model.fit(X_train, y_train)
             y_pred = model.predict(X_test)
 
-            # -------------------------
-            # Evaluasi
-            # -------------------------
-            st.subheader("📊 Hasil Evaluasi Model")
             acc = accuracy_score(y_test, y_pred)
-            st.write(f"**Akurasi:** {acc:.2f}")
 
-            st.text("Classification Report:")
+            st.success(f"✅ Akurasi Model: {acc:.2f}")
+            st.text("Laporan Klasifikasi:")
             st.text(classification_report(y_test, y_pred))
 
-            st.subheader("📌 Confusion Matrix")
-            cm = confusion_matrix(y_test, y_pred)
-            fig, ax = plt.subplots()
-            sns.heatmap(
-                cm,
-                annot=True,
-                fmt="d",
-                cmap="Blues",
-                xticklabels=model.classes_,
-                yticklabels=model.classes_,
-                ax=ax
-            )
-            ax.set_xlabel("Predicted")
-            ax.set_ylabel("Actual")
-            st.pyplot(fig)
+            # Simpan model di session
+            st.session_state["model"] = model
+            st.session_state["features"] = feature_cols
+
+# ================================
+# Halaman 3: Prediksi Data Baru
+# ================================
+elif menu == "🔮 Prediksi Data Baru":
+    st.title("🔮 Prediksi Data Baru")
+
+    if "model" not in st.session_state:
+        st.warning("⚠️ Belum ada model. Latih dulu di halaman 📊 Pelatihan Model.")
+        st.stop()
+
+    model = st.session_state["model"]
+    features = st.session_state["features"]
+
+    st.subheader("📝 Input Data Penduduk")
+
+    input_data = {}
+    for col in features:
+        val = st.text_input(f"Masukkan nilai untuk {col}")
+        input_data[col] = val
+
+    if st.button("🔍 Prediksi"):
+        df_new = pd.DataFrame([input_data])
+        try:
+            pred = model.predict(df_new)[0]
+            st.success(f"🎯 Hasil Prediksi: **{pred}**")
+        except Exception as e:
+            st.error(f"Gagal melakukan prediksi: {e}")
