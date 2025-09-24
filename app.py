@@ -2,7 +2,12 @@ import streamlit as st
 import pandas as pd
 import joblib
 import os
+from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score
 
+# === KONFIGURASI APLIKASI ===
 st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
 
 MODEL_FILE = "model_bansos.pkl"
@@ -10,16 +15,53 @@ HISTORY_FILE = "riwayat.csv"
 
 # ===== DASHBOARD =====
 def halaman_dashboard():
-    st.title("📊 Dashboard")
+    st.title("📊 Dashboard Sistem Klasifikasi Bantuan Sosial")
     st.write("""
-    Sistem ini digunakan untuk klasifikasi penerima bantuan sosial di Desa Cikembar
-    menggunakan algoritma **Naive Bayes**.
-
-    ### Halaman
-    - **Dashboard** → Informasi sistem
-    - **Prediksi** → Prediksi manual atau upload file (CSV/Excel)
-    - **Riwayat Prediksi** → Melihat histori prediksi
+    Sistem ini digunakan untuk menentukan siapa yang **berhak** dan siapa yang
+    **belum layak** menerima bantuan sosial di Desa Cikembar menggunakan
+    algoritma **Naive Bayes**.
     """)
+
+    st.subheader("📂 Upload Dataset untuk Melatih Model")
+    uploaded = st.file_uploader("Upload file CSV/Excel", type=["csv", "xlsx", "xls"])
+
+    if uploaded is not None:
+        if uploaded.name.endswith(".csv"):
+            df = pd.read_csv(uploaded)
+        else:
+            df = pd.read_excel(uploaded, engine="openpyxl")
+
+        st.write("📑 Data awal:")
+        st.dataframe(df.head())
+
+        target_col = st.selectbox("Pilih kolom target (label)", df.columns)
+
+        if st.button("Latih Model Naive Bayes"):
+            X = df.drop(columns=[target_col])
+            y = df[target_col]
+
+            # Encode kolom kategori
+            encoders = {}
+            for col in X.select_dtypes(include=["object"]).columns:
+                le = LabelEncoder()
+                X[col] = le.fit_transform(X[col])
+                encoders[col] = le
+
+            target_encoder = LabelEncoder()
+            y = target_encoder.fit_transform(y)
+
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+
+            model = GaussianNB()
+            model.fit(X_train, y_train)
+
+            acc = accuracy_score(y_test, model.predict(X_test))
+            st.success(f"✅ Model berhasil dilatih. Akurasi: {acc:.2f}")
+
+            joblib.dump({"model": model, "encoders": encoders, "target": target_encoder}, MODEL_FILE)
+            st.info("Model tersimpan ke file `model_bansos.pkl`")
 
 # ===== SIMPAN RIWAYAT =====
 def simpan_riwayat(df):
@@ -33,7 +75,7 @@ def halaman_prediksi():
     st.title("🔮 Prediksi Penerima Bantuan Sosial")
 
     if not os.path.exists(MODEL_FILE):
-        st.warning("⚠️ Model belum ada. Silakan latih model dulu dan simpan sebagai `model_bansos.pkl`.")
+        st.warning("⚠️ Model belum ada. Silakan latih model dulu di halaman Dashboard.")
         return
 
     model_data = joblib.load(MODEL_FILE)
@@ -65,40 +107,31 @@ def halaman_prediksi():
             simpan_riwayat(df_hist)
 
     else:
-        # === INI BAGIAN UPLOAD FILE ===
-        file_data = st.file_uploader(
-            "📂 Upload file CSV/Excel", 
-            type=["csv", "xlsx", "xls"]
-        )
-
+        file_data = st.file_uploader("📂 Upload file CSV/Excel untuk prediksi", type=["csv", "xlsx", "xls"])
         if file_data is not None:
-            try:
-                if file_data.name.endswith(".csv"):
-                    df_new = pd.read_csv(file_data)
-                else:
-                    df_new = pd.read_excel(file_data, engine="openpyxl")
+            if file_data.name.endswith(".csv"):
+                df_new = pd.read_csv(file_data)
+            else:
+                df_new = pd.read_excel(file_data, engine="openpyxl")
 
-                st.write("📑 Data yang diupload:")
-                st.dataframe(df_new.head())
+            st.write("📑 Data yang diupload:")
+            st.dataframe(df_new.head())
 
-                for col in ["Pekerjaan", "Pendidikan"]:
-                    if col in df_new.columns:
-                        df_new[col] = encoders[col].transform(df_new[col])
+            for col in ["Pekerjaan", "Pendidikan"]:
+                if col in df_new.columns:
+                    df_new[col] = encoders[col].transform(df_new[col])
 
-                preds = model.predict(df_new.drop(columns=["Nama"]))
-                df_new["Hasil Prediksi"] = target_encoder.inverse_transform(preds)
+            preds = model.predict(df_new.drop(columns=["Nama"]))
+            df_new["Hasil Prediksi"] = target_encoder.inverse_transform(preds)
 
-                st.success("✅ Prediksi selesai")
-                st.dataframe(df_new)
+            st.success("✅ Prediksi selesai")
+            st.dataframe(df_new)
 
-                simpan_riwayat(
-                    df_new[["Nama", "Pekerjaan", "Pendidikan", "Penghasilan", "Tanggungan", "Hasil Prediksi"]]
-                )
+            simpan_riwayat(
+                df_new[["Nama", "Pekerjaan", "Pendidikan", "Penghasilan", "Tanggungan", "Hasil Prediksi"]]
+            )
 
-            except Exception as e:
-                st.error(f"Gagal membaca file: {e}")
-
-# ===== RIWAYAT =====
+# ===== RIWAYAT PREDIKSI =====
 def halaman_riwayat():
     st.title("📜 Riwayat Prediksi")
     if os.path.exists(HISTORY_FILE):
@@ -107,7 +140,7 @@ def halaman_riwayat():
     else:
         st.info("Belum ada riwayat prediksi.")
 
-# ===== MENU =====
+# ===== MAIN MENU =====
 menu = st.sidebar.radio("Navigasi", ["Dashboard", "Prediksi", "Riwayat Prediksi"])
 
 if menu == "Dashboard":
