@@ -59,13 +59,6 @@ def load_dummy_data():
 def train_model(data):
     df = data.copy()
     
-    # Validasi data minimal
-    if len(df) < 5:
-        # Jika data kecil, gunakan full data untuk train (tanpa split)
-        X_train = df[['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga']]
-        # ... (lanjutkan encoding)
-        st.warning("Dataset kecil, menggunakan full data untuk training tanpa evaluasi split.")
-    
     # Encoding untuk Kepemilikan_Rumah
     le_rumah = LabelEncoder()
     df['Kepemilikan_Rumah_encoded'] = le_rumah.fit_transform(df['Kepemilikan_Rumah'])
@@ -80,8 +73,10 @@ def train_model(data):
     if len(df) >= 5:
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     else:
+        # Jika data terlalu kecil, gunakan full data untuk train dan evaluasi
         X_train, y_train = X, y
-        X_test, y_test = X, y  # Dummy untuk evaluasi full
+        X_test, y_test = X, y
+        st.warning("Dataset kecil (<5 baris), menggunakan full data untuk training tanpa split evaluasi.")
     
     # Train Naive Bayes
     model = GaussianNB()
@@ -108,19 +103,23 @@ def predict_single(model, le_rumah, le_target, data):
         input_data = np.array([[data['usia'], data['pendapatan'], data['jumlah_anggota'], rumah_encoded]])
         
         prediksi_encoded = model.predict(input_data)[0]
-        prob = model.predict_proba(input_data)[0]  # [prob_Layak (0), prob_Tidak Layak (1)]
+        prob = model.predict_proba(input_data)[0]  # Probabilitas [class_0, class_1]
         
-        # Decode prediksi (konfirmasi index berdasarkan classes_)
+        # Decode prediksi dan sesuaikan probabilitas berdasarkan urutan classes_
+        prediksi = le_target.inverse_transform([prediksi_encoded])[0]
+        
+        # Asumsi: classes_ urut alfabetis ('Layak'=0, 'Tidak Layak'=1), tapi konfirmasi
         if le_target.classes_[0] == 'Layak':
             prob_layak, prob_tidak = prob[0], prob[1]
         else:
             prob_layak, prob_tidak = prob[1], prob[0]  # Jika urutan terbalik
         
-        prediksi = le_target.inverse_transform([prediksi_encoded])[0]
-        
         return prediksi, [prob_layak, prob_tidak]
     except ValueError as e:
-        st.error(f"Error prediksi: {e}")
+        st.error(f"❌ Error prediksi: {e}")
+        return None, None
+    except Exception as e:
+        st.error(f"❌ Error tak terduga: {e}")
         return None, None
 
 # Sidebar untuk navigasi
@@ -201,7 +200,7 @@ elif page == "Upload Dataset & Prediksi":
                 else:  # Excel
                     df = pd.read_excel(uploaded_file)
                 
-                # Konversi tipe data numerik
+                # Konversi tipe data numerik (handle jika string)
                 numeric_cols = ['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga']
                 for col in numeric_cols:
                     if col in df.columns:
@@ -259,4 +258,34 @@ elif page == "Upload Dataset & Prediksi":
             st.dataframe(dummy_df.head())
             st.download_button(
                 label="📥 Download Contoh Dataset CSV",
-                data=dummy_df.to_csv(index=False).encode('
+                data=dummy_df.to_csv(index=False).encode('utf-8'),
+                file_name='contoh_dataset_cikembar.csv',
+                mime='text/csv'
+            )
+            
+            # Download Excel menggunakan BytesIO
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                dummy_df.to_excel(writer, index=False, sheet_name='Data Warga')
+            buffer.seek(0)
+            st.download_button(
+                label="📥 Download Contoh Dataset Excel",
+                data=buffer.getvalue(),
+                file_name='contoh_dataset_cikembar.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+    
+    with tab2:
+        st.header("Prediksi Manual")
+        
+        if st.session_state.model is None:
+            st.warning("⚠️ Silakan upload dataset dan latih model terlebih dahulu")
+        else:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                usia = st.number_input("Usia Kepala Keluarga", min_value=18, max_value=100, value=40)
+                pendapatan = st.number_input("Pendapatan Bulanan (Rp)", min_value=0, max_value=10000000, value=1500000)
+            
+            with col2:
+                jumlah_ang
