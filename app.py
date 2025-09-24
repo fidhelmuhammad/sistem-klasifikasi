@@ -150,7 +150,17 @@ elif page == "Upload Dataset & Prediksi":
     tab1, tab2 = st.tabs(["Upload Dataset", "Prediksi Manual"])
     with tab1:
         st.header("Upload Dataset")
-        uploaded_file = st.file_uploader("Pilih file dataset (CSV atau Excel)", type=['csv', 'xlsx', 'xls'])
+        col1, col2 = st.columns(2)
+        with col1:
+            uploaded_file = st.file_uploader("Pilih file dataset (CSV atau Excel)", type=['csv', 'xlsx', 'xls'])
+        with col2:
+            dummy_df = load_dummy_data()
+            csv = dummy_df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download Contoh Dataset CSV", csv, "contoh_dataset.csv", "text/csv")
+            excel_buffer = io.BytesIO()
+            dummy_df.to_excel(excel_buffer, index=False, engine='openpyxl')
+            excel_buffer.seek(0)
+            st.download_button("📥 Download Contoh Dataset Excel", excel_buffer.getvalue(), "contoh_dataset.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         if uploaded_file is not None:
             try:
                 file_extension = uploaded_file.name.split('.')[-1].lower()
@@ -165,7 +175,7 @@ elif page == "Upload Dataset & Prediksi":
                 required_columns = ['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga', 'Kepemilikan_Rumah', 'Status_Kesejahteraan']
                 if not all(col in df.columns for col in required_columns):
                     st.error(f"File harus memiliki kolom: {', '.join(required_columns)}. Kolom saat ini: {', '.join(df.columns)}")
-                    st.info("Pastikan nama kolom persis seperti: Usia_Kepala_Keluarga, Pendapatan_Bulanan, dll.")
+                    st.info("Pastikan nama kolom persis seperti contoh dataset.")
                 else:
                     initial_len = len(df)
                     df = df.dropna(subset=required_columns)
@@ -179,31 +189,4 @@ elif page == "Upload Dataset & Prediksi":
                         st.dataframe(df.head())
                         if st.button("🚀 Latih Model dengan Dataset Ini"):
                             with st.spinner("Melatih model Naive Bayes..."):
-                                model, le_rumah, le_target, accuracy, report = train_model(df)
-                                if model is not None:
-                                    st.session_state.model = model
-                                    st.session_state.le_rumah = le_rumah
-                                    st.session_state.le_target = le_target
-                                    st.success(f"✅ Model berhasil dilatih dengan akurasi: {accuracy:.2%}")
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        st.metric("Akurasi Model", f"{accuracy:.2%}")
-                                    with col2:
-                                        st.metric("Jumlah Data", len(df))
-                                    st.subheader("Laporan Klasifikasi")
-                                    st.json(report)
-                                else:
-                                    st.error("❌ Gagal melatih model. Periksa data kategorikal.")
-            except Exception as e:
-                st.error(f"❌ Error membaca file: {e}. Pastikan file tidak rusak dan format kolom benar.")
-        else:
-            st.info("📝 Silakan upload file CSV atau Excel dengan format yang sesuai")
-            st.markdown("""
-            **Format file yang diharapkan (kolom wajib):**
-            - Usia_Kepala_Keluarga (number)
-            - Pendapatan_Bulanan (number)
-            - Jumlah_Anggota_Keluarga (number)
-            - Kepemilikan_Rumah (Ya/Tidak)
-            - Status_Kesejahteraan (Layak/Tidak Layak)
-            
-            **Kolom opsional lain:** Nama, Jenis
+                               
