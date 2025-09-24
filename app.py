@@ -2,26 +2,26 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import tempfile
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, ConfusionMatrixDisplay
 from sklearn.naive_bayes import GaussianNB
 from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, ConfusionMatrixDisplay
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 
 # ------------------------------
-# Halaman 1: Informasi Sistem
+# Halaman Dashboard
 # ------------------------------
-def halaman_informasi():
+def halaman_dashboard():
     st.title("📊 Sistem Klasifikasi Penerima Bantuan Sosial")
     st.subheader("Desa Cikembar")
+
     st.markdown("""
     ### Deskripsi  
-    Sistem ini dirancang untuk membantu pemerintah Desa Cikembar dalam menentukan siapa saja yang **berhak** 
-    menerima bantuan sosial dengan menggunakan algoritma **Naive Bayes**.
+    Sistem ini membantu menentukan siapa saja yang **berhak** menerima bantuan sosial di Desa Cikembar
+    dengan algoritma **Naive Bayes**.
 
     ### Tujuan  
     - Membantu proses klasifikasi penerima bansos secara objektif.  
@@ -34,87 +34,11 @@ def halaman_informasi():
     - Meningkatkan keadilan dalam distribusi bantuan sosial.  
     """)
 
-# ------------------------------
-# Halaman 2: Pelatihan Model
-# ------------------------------
-def halaman_pelatihan():
-    st.title("⚙️ Pelatihan Model Naive Bayes")
+    st.info("Navigasi ada di sidebar: **Dashboard**, **Prediksi**, dan **Riwayat Prediksi**.")
 
-    uploaded_file = st.file_uploader("📂 Upload dataset (CSV/Excel)", type=["csv", "xlsx", "xls"])
-
-    if uploaded_file is not None:
-        # deteksi format file
-        if uploaded_file.name.endswith(".csv"):
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
-
-        st.write("### Data Sample")
-        st.dataframe(df.head())
-
-        target_col = st.selectbox("Pilih kolom target (label)", df.columns)
-        feature_cols = st.multiselect("Pilih kolom fitur", [c for c in df.columns if c != target_col])
-
-        if st.button("Latih Model"):
-            X = df[feature_cols]
-            y = df[target_col]
-
-            # Encode target
-            le = LabelEncoder()
-            y_encoded = le.fit_transform(y)
-
-            # Preprocessing pipeline
-            numeric_features = X.select_dtypes(include=["int64", "float64"]).columns
-            categorical_features = X.select_dtypes(include=["object"]).columns
-
-            numeric_transformer = Pipeline(steps=[
-                ("scaler", StandardScaler())
-            ])
-            categorical_transformer = Pipeline(steps=[
-                ("encoder", OneHotEncoder(handle_unknown="ignore"))
-            ])
-
-            preprocessor = ColumnTransformer(
-                transformers=[
-                    ("num", numeric_transformer, numeric_features),
-                    ("cat", categorical_transformer, categorical_features),
-                ]
-            )
-
-            pipeline = Pipeline(steps=[
-                ("preprocessor", preprocessor),
-                ("classifier", GaussianNB())
-            ])
-
-            # Split & Train
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y_encoded, test_size=0.2, random_state=42
-            )
-
-            pipeline.fit(X_train, y_train)
-            y_pred = pipeline.predict(X_test)
-
-            # Evaluasi
-            st.subheader("📈 Hasil Evaluasi")
-            st.text(classification_report(y_test, y_pred, target_names=le.classes_))
-
-            fig, ax = plt.subplots()
-            ConfusionMatrixDisplay.from_predictions(y_test, y_pred, display_labels=le.classes_, ax=ax)
-            st.pyplot(fig)
-
-            # Simpan model ke file sementara
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".joblib") as tmp:
-                joblib.dump({"pipeline": pipeline, "classes": le.classes_}, tmp.name)
-                st.success("✅ Model berhasil dilatih dan disimpan")
-                with open(tmp.name, "rb") as f:
-                    st.download_button(
-                        label="💾 Download Model",
-                        data=f,
-                        file_name="model_bansos.joblib"
-                    )
 
 # ------------------------------
-# Halaman 3: Prediksi
+# Halaman Prediksi
 # ------------------------------
 def halaman_prediksi():
     st.title("🔮 Prediksi Penerima Bantuan Sosial")
@@ -131,7 +55,6 @@ def halaman_prediksi():
         option = st.radio("Pilih metode input:", ["Input Manual", "Upload CSV/Excel"])
 
         if option == "Input Manual":
-            st.subheader("Masukkan Data")
             umur = st.number_input("Umur", min_value=18, max_value=100, value=30)
             pekerjaan = st.selectbox("Pekerjaan", ["Petani", "Buruh", "Pedagang", "Tidak Bekerja"])
             penghasilan = st.number_input("Penghasilan (Rp)", min_value=0, value=1000000)
@@ -145,10 +68,15 @@ def halaman_prediksi():
             if st.button("Prediksi"):
                 pred = pipeline.predict(input_df)[0]
                 hasil = classes[pred]
+
                 st.success(f"Hasil Prediksi: **{hasil}**")
 
+                # Simpan ke riwayat
+                if "riwayat" not in st.session_state:
+                    st.session_state.riwayat = []
+                st.session_state.riwayat.append({"Input": input_df.to_dict(orient="records")[0], "Hasil": hasil})
+
         else:
-            st.subheader("Upload Data untuk Prediksi Batch")
             file_data = st.file_uploader("Upload file data (CSV/Excel)", type=["csv", "xlsx", "xls"])
             if file_data is not None:
                 if file_data.name.endswith(".csv"):
@@ -162,8 +90,15 @@ def halaman_prediksi():
                 if st.button("Prediksi Batch"):
                     preds = pipeline.predict(df_new)
                     df_new["Prediksi"] = [classes[p] for p in preds]
+
                     st.write("### Hasil Prediksi")
                     st.dataframe(df_new)
+
+                    # Simpan ke riwayat
+                    if "riwayat" not in st.session_state:
+                        st.session_state.riwayat = []
+                    for row in df_new.to_dict(orient="records"):
+                        st.session_state.riwayat.append({"Input": row, "Hasil": row["Prediksi"]})
 
                     # Download hasil
                     csv = df_new.to_csv(index=False).encode("utf-8")
@@ -174,15 +109,29 @@ def halaman_prediksi():
                         mime="text/csv"
                     )
 
+
+# ------------------------------
+# Halaman Riwayat Prediksi
+# ------------------------------
+def halaman_riwayat():
+    st.title("📝 Riwayat Prediksi")
+
+    if "riwayat" not in st.session_state or len(st.session_state.riwayat) == 0:
+        st.warning("Belum ada riwayat prediksi.")
+    else:
+        df_history = pd.DataFrame(st.session_state.riwayat)
+        st.dataframe(df_history)
+
+
 # ------------------------------
 # Main App
 # ------------------------------
 st.sidebar.title("Navigasi")
-halaman = st.sidebar.radio("Pilih Halaman", ["Informasi", "Pelatihan Model", "Prediksi"])
+halaman = st.sidebar.radio("Pilih Halaman", ["Dashboard", "Prediksi", "Riwayat Prediksi"])
 
-if halaman == "Informasi":
-    halaman_informasi()
-elif halaman == "Pelatihan Model":
-    halaman_pelatihan()
+if halaman == "Dashboard":
+    halaman_dashboard()
 elif halaman == "Prediksi":
     halaman_prediksi()
+elif halaman == "Riwayat Prediksi":
+    halaman_riwayat()
