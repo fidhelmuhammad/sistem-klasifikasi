@@ -1,152 +1,187 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+import os
 from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import CategoricalNB
 from sklearn.preprocessing import LabelEncoder
-from sklearn.naive_bayes import GaussianNB
-from sklearn.metrics import confusion_matrix
 import joblib
 
-st.set_page_config(page_title="Klasifikasi Kesejahteraan", layout="wide")
+# ----------------------------
+# Helper functions
+# ----------------------------
 
-# Sidebar navigasi
-menu = st.sidebar.radio("Navigasi", ["Home", "Training", "Prediksi"])
+def preprocess_data(df, target_col):
+    """
+    Encode semua kolom kategorikal termasuk target
+    """
+    le_dict = {}
+    for col in df.columns:
+        le = LabelEncoder()
+        df[col] = le.fit_transform(df[col].astype(str))
+        le_dict[col] = le
+    X = df.drop(columns=[target_col])
+    y = df[target_col]
+    return X, y, le_dict
 
-# ==============================
-# 1. HALAMAN HOME
-# ==============================
-if menu == "Home":
-    st.title("📊 Sistem Klasifikasi Status Kesejahteraan Masyarakat")
+def train_model(df, target_col):
+    """
+    Latih model Naive Bayes
+    """
+    X, y, le_dict = preprocess_data(df, target_col)
 
-    st.markdown("""
-    ## 🎓 Tentang Penelitian
-    Penelitian ini berjudul **"Klasifikasi Status Kesejahteraan Masyarakat Menggunakan Metode Naïve Bayes di Desa Cikembar"**.  
-    Tujuan penelitian adalah:
-    - 📌 Mengelompokkan masyarakat Desa Cikembar berdasarkan tingkat kesejahteraan.  
-    - 📌 Memberikan gambaran kondisi sosial-ekonomi masyarakat.  
-    - 📌 Membantu pemerintah desa dalam pengambilan keputusan terkait bantuan sosial dan kebijakan pembangunan.  
+    # cek apakah cukup data untuk stratify
+    stratify_option = y if len(y.unique()) > 1 else None
 
-    ### 🔎 Metode
-    - Metode yang digunakan adalah **Naïve Bayes Classifier**, yaitu algoritma klasifikasi berbasis probabilitas.  
-    - Naïve Bayes dipilih karena sederhana, cepat, dan efektif untuk dataset dengan banyak variabel kategorikal.  
-    - Proses utama: *preprocessing data → training model → evaluasi → prediksi status kesejahteraan*.  
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=stratify_option
+    )
 
-    ### 📂 Alur Aplikasi
-    - **Training** → Melatih model menggunakan dataset penduduk Desa Cikembar.  
-    - **Prediksi** → Memasukkan data baru untuk mengetahui status kesejahteraan.  
-    """)
+    model = CategoricalNB()
+    model.fit(X_train, y_train)
 
-    try:
-        df = pd.read_excel("dataset_penduduk_cikembar_enriched.xlsx")
-        st.subheader("📂 Ringkasan Dataset (Default)")
-        st.write(df.head())
+    return model, le_dict, X_test, y_test
 
-        # Visualisasi distribusi target kalau ada
-        if "Status_Kesejahteraan" in df.columns:
-            st.subheader("Distribusi Status Kesejahteraan")
-            fig, ax = plt.subplots()
-            df["Status_Kesejahteraan"].value_counts().plot(kind="bar", ax=ax)
-            st.pyplot(fig)
-    except Exception as e:
-        st.warning("Dataset default tidak ditemukan. Silakan upload di menu Training.")
+def save_history(input_data, prediction, filename="history.csv"):
+    """
+    Simpan riwayat prediksi
+    """
+    new_row = input_data.copy()
+    new_row["Hasil Prediksi"] = prediction
 
-# ==============================
-# 2. HALAMAN TRAINING
-# ==============================
-elif menu == "Training":
-    st.title("📌 Training Model Naïve Bayes")
-
-    uploaded_file = st.file_uploader("Upload dataset (Excel)", type=["xlsx"])
-    if uploaded_file:
-        df = pd.read_excel(uploaded_file)
+    if os.path.exists(filename):
+        old = pd.read_csv(filename)
+        updated = pd.concat([old, pd.DataFrame([new_row])], ignore_index=True)
+        updated.to_csv(filename, index=False)
     else:
+        pd.DataFrame([new_row]).to_csv(filename, index=False)
+
+def load_history(filename="history.csv"):
+    """
+    Load riwayat prediksi
+    """
+    if os.path.exists(filename):
+        return pd.read_csv(filename)
+    return pd.DataFrame()
+
+# ----------------------------
+# Streamlit App
+# ----------------------------
+
+st.set_page_config(page_title="Klasifikasi Penerima Bantuan Sosial", layout="wide")
+
+def home_page():
+    st.title("🎯 Sistem Klasifikasi Penerima Bantuan Sosial")
+    st.markdown(
+        """
+        ## Tentang Sistem
+        Website ini dibuat untuk membantu pemerintah desa dalam 
+        **menentukan siapa yang layak dan tidak layak menerima bantuan sosial**
+        menggunakan **Metode Naïve Bayes**.  
+        
+        ### 🎯 Tujuan:
+        - Menyediakan sistem yang transparan dan akurat.  
+        - Memastikan bantuan diberikan kepada masyarakat yang paling membutuhkan.  
+        - Menyimpan riwayat prediksi agar bisa dijadikan arsip.  
+        """
+    )
+
+def upload_and_training_page():
+    st.title("📂 Upload Dataset & Training Model")
+
+    uploaded_file = st.file_uploader(
+        "Upload dataset Anda (CSV atau Excel)", type=["csv", "xlsx"]
+    )
+
+    if uploaded_file is not None:
         try:
-            df = pd.read_excel("dataset_penduduk_cikembar_enriched.xlsx")
-        except:
-            st.error("❌ Dataset tidak ditemukan. Silakan upload file Excel.")
-            st.stop()
+            if uploaded_file.name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file, engine="openpyxl")
 
-    st.write("📂 Preview Dataset", df.head())
+            st.success("✅ Dataset berhasil diupload!")
+            st.dataframe(df.head())
 
-    # Pilih target kolom
-    target_col = st.selectbox("Pilih kolom target (status kesejahteraan)", df.columns)
+            target_col = st.selectbox("Pilih kolom target (label):", df.columns)
 
-    if st.button("🚀 Latih Model"):
-        X = df.drop(columns=[target_col])
-        y = df[target_col]
+            if st.button("🚀 Mulai Training"):
+                model, le_dict, X_test, y_test = train_model(df, target_col)
 
-        # Label Encoding
-        le_dict = {}
-        for col in X.select_dtypes(include=["object"]).columns:
-            le = LabelEncoder()
-            X[col] = le.fit_transform(X[col].astype(str))
-            le_dict[col] = le
+                # simpan model & encoder
+                joblib.dump((model, le_dict, target_col), "model.pkl")
+                st.session_state["model_ready"] = True
 
-        le_target = LabelEncoder()
-        y = le_target.fit_transform(y)
+                st.success("✅ Training selesai! Model siap digunakan.")
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
+                st.write("### Contoh Data Uji")
+                st.dataframe(X_test.head())
 
-        model = GaussianNB()
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
+        except Exception as e:
+            st.error(f"❌ Terjadi kesalahan saat membaca file: {e}")
 
-        # Evaluasi sederhana
-        labels = np.unique(y_test)
-        target_names = le_target.inverse_transform(labels)
-        cm = confusion_matrix(y_test, y_pred, labels=labels)
+def prediction_page():
+    st.title("🔮 Prediksi Penerima Bantuan Sosial")
 
-        st.subheader("📋 Evaluasi Model")
-        eval_data = []
-        for i, label in enumerate(labels):
-            total = cm[i].sum()
-            benar = cm[i, i]
-            salah = total - benar
-            eval_data.append([target_names[i], total, benar, salah])
+    if not os.path.exists("model.pkl"):
+        st.warning("⚠️ Model belum dilatih. Silakan upload data dan latih model terlebih dahulu.")
+        return
 
-        eval_df = pd.DataFrame(
-            eval_data,
-            columns=["Kelas", "Total Data Uji", "Prediksi Benar", "Prediksi Salah"],
-        )
-        st.table(eval_df)
+    model, le_dict, target_col = joblib.load("model.pkl")
 
-        # Simpan model
-        joblib.dump((model, le_dict, le_target, target_col, list(X.columns)), "naive_bayes_model.pkl")
-        st.success("✅ Model berhasil dilatih dan disimpan sebagai `naive_bayes_model.pkl`")
+    # ambil semua fitur kecuali target
+    features = [col for col in le_dict.keys() if col != target_col]
+    input_data = {}
 
+    for col in features:
+        options = le_dict[col].classes_
+        val = st.selectbox(f"Pilih {col}:", options)
+        input_data[col] = val
 
-# ==============================
-# 3. HALAMAN PREDIKSI
-# ==============================
-elif menu == "Prediksi":
-    st.title("🔮 Prediksi Status Kesejahteraan")
+    if st.button("🔎 Prediksi"):
+        try:
+            # encode input sesuai encoder
+            X_new = []
+            for col in features:
+                le = le_dict[col]
+                X_new.append(le.transform([input_data[col]])[0])
+            X_new = pd.DataFrame([X_new], columns=features)
 
-    try:
-        model, le_dict, le_target, target_col, feature_names = joblib.load("naive_bayes_model.pkl")
-    except:
-        st.error("❌ Model belum ada. Silakan latih model di halaman Training terlebih dahulu.")
-        st.stop()
+            pred = model.predict(X_new)[0]
+            pred_label = le_dict[target_col].inverse_transform([pred])[0]
 
-    st.info("Isi data berikut untuk memprediksi status kesejahteraan:")
+            st.success(f"📌 Hasil Prediksi: **{pred_label}**")
 
-    # Buat form input sesuai fitur yang dipakai saat training
-    user_input = {}
-    for col in feature_names:
-        if col in le_dict:  # kolom kategorikal
-            options = list(le_dict[col].classes_)
-            pilihan = st.selectbox(f"{col}", options, key=col)
-            user_input[col] = le_dict[col].transform([pilihan])[0]
-        else:  # kolom numerik
-            nilai = st.number_input(f"{col}", value=0, key=col)
-            user_input[col] = nilai
+            # simpan riwayat
+            save_history(input_data, pred_label)
 
-    if st.button("Prediksi"):
-        # Pastikan kolom sama persis dengan saat training
-        X_new = pd.DataFrame([user_input], columns=feature_names)
+        except Exception as e:
+            st.error(f"❌ Terjadi kesalahan saat prediksi: {e}")
 
-        pred = model.predict(X_new)
-        hasil = le_target.inverse_transform(pred)[0]
-        st.success(f"📌 Hasil Prediksi: **{hasil}**")
+def history_page():
+    st.title("📜 Arsip / Riwayat Prediksi")
+    df = load_history()
+    if df.empty:
+        st.info("Belum ada riwayat prediksi.")
+    else:
+        st.dataframe(df)
+
+# ----------------------------
+# Navigation
+# ----------------------------
+
+menu = st.sidebar.radio(
+    "Navigasi", ["Home", "Upload & Training", "Prediksi", "Arsip"]
+)
+
+def main():
+    if menu == "Home":
+        home_page()
+    elif menu == "Upload & Training":
+        upload_and_training_page()
+    elif menu == "Prediksi":
+        prediction_page()
+    elif menu == "Arsip":
+        history_page()
+
+if __name__ == "__main__":
+    main()
