@@ -13,19 +13,28 @@ st.set_page_config(page_title="Klasifikasi Kesejahteraan", layout="wide")
 # Sidebar navigasi
 menu = st.sidebar.radio("Navigasi", ["Home", "Training", "Prediksi"])
 
-
 # ==============================
 # 1. HALAMAN HOME
 # ==============================
 if menu == "Home":
     st.title("📊 Sistem Klasifikasi Status Kesejahteraan Masyarakat")
-    st.markdown("""
-    Aplikasi ini dibuat untuk **menentukan status kesejahteraan masyarakat** 
-    menggunakan metode **Naïve Bayes**.
 
-    ### Navigasi
-    - 📌 **Training** → latih model dengan dataset.  
-    - 📌 **Prediksi** → prediksi status kesejahteraan untuk data baru.  
+    st.markdown("""
+    ## 🎓 Tentang Penelitian
+    Penelitian ini berjudul **"Klasifikasi Status Kesejahteraan Masyarakat Menggunakan Metode Naïve Bayes di Desa Cikembar"**.  
+    Tujuan penelitian adalah:
+    - 📌 Mengelompokkan masyarakat Desa Cikembar berdasarkan tingkat kesejahteraan.  
+    - 📌 Memberikan gambaran kondisi sosial-ekonomi masyarakat.  
+    - 📌 Membantu pemerintah desa dalam pengambilan keputusan terkait bantuan sosial dan kebijakan pembangunan.  
+
+    ### 🔎 Metode
+    - Metode yang digunakan adalah **Naïve Bayes Classifier**, yaitu algoritma klasifikasi berbasis probabilitas.  
+    - Naïve Bayes dipilih karena sederhana, cepat, dan efektif untuk dataset dengan banyak variabel kategorikal.  
+    - Proses utama: *preprocessing data → training model → evaluasi → prediksi status kesejahteraan*.  
+
+    ### 📂 Alur Aplikasi
+    - **Training** → Melatih model menggunakan dataset penduduk Desa Cikembar.  
+    - **Prediksi** → Memasukkan data baru untuk mengetahui status kesejahteraan.  
     """)
 
     try:
@@ -41,7 +50,6 @@ if menu == "Home":
             st.pyplot(fig)
     except Exception as e:
         st.warning("Dataset default tidak ditemukan. Silakan upload di menu Training.")
-
 
 # ==============================
 # 2. HALAMAN TRAINING
