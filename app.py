@@ -6,7 +6,6 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import LabelEncoder
 import io
-from datetime import datetime
 
 st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
 
@@ -22,23 +21,11 @@ if 'le_target' not in st.session_state:
 if 'dataset' not in st.session_state:
     st.session_state.dataset = None
 
-# Dummy dataset minimal
-@st.cache_data
-def load_dummy_data():
-    data = {
-        'Usia_Kepala_Keluarga': [30, 45],
-        'Pendapatan_Bulanan': [1000000, 1500000],
-        'Jumlah_Anggota_Keluarga': [4, 5],
-        'Kepemilikan_Rumah': ['Ya', 'Tidak'],
-        'Status_Kesejahteraan': ['Layak', 'Tidak Layak']
-    }
-    return pd.DataFrame(data)
-
 # Training
 def train_model(data):
     df = data.copy()
 
-    # Normalisasi nilai Kepemilikan_Rumah
+    # Normalisasi Kepemilikan_Rumah
     if 'Kepemilikan_Rumah' in df.columns:
         df['Kepemilikan_Rumah'] = df['Kepemilikan_Rumah'].astype(str).str.strip().str.lower()
         df['Kepemilikan_Rumah'] = df['Kepemilikan_Rumah'].replace({
@@ -54,6 +41,15 @@ def train_model(data):
     if len(unique_rumah) > 2 or unique_rumah - {'Ya', 'Tidak'}:
         st.error("Kolom 'Kepemilikan_Rumah' harus hanya berisi 'Ya' atau 'Tidak'.")
         return None, None, None, 0, {}
+
+    # Normalisasi Status_Kesejahteraan
+    if 'Status_Kesejahteraan' in df.columns:
+        df['Status_Kesejahteraan'] = df['Status_Kesejahteraan'].astype(str).str.strip().str.title()
+        df['Status_Kesejahteraan'] = df['Status_Kesejahteraan'].replace({
+            'Layak': 'Layak',
+            'Tidak layak': 'Tidak Layak',
+            'Tidak Layak': 'Tidak Layak'
+        })
 
     if 'Status_Kesejahteraan' not in df.columns or len(df) == 0:
         st.error("Data tidak valid atau kolom 'Status_Kesejahteraan' hilang.")
@@ -119,7 +115,7 @@ if page == "Dashboard Informasi":
         if st.session_state.dataset is not None:
             st.metric("Total Dataset", f"{len(st.session_state.dataset)} Warga", "Data Terupload")
         else:
-            st.metric("Total Dataset", "2 Warga", "Data Dummy")
+            st.metric("Total Dataset", "Belum Ada", "Upload Dataset")
     with col2:
         if st.session_state.model:
             st.metric("Status Model", "Tersedia", "Siap Prediksi")
@@ -127,16 +123,6 @@ if page == "Dashboard Informasi":
             st.metric("Status Model", "Belum Dilatih", "Upload Dataset")
     with col3:
         st.metric("Riwayat Prediksi", f"{len(st.session_state.riwayat_prediksi)}", "Hasil Tersimpan")
-
-    st.markdown("---")
-    st.header("📋 Deskripsi Sistem")
-    st.write("Sistem ini mengklasifikasikan warga berdasarkan data demografis dan ekonomi menggunakan algoritma Naive Bayes.")
-    st.header("📊 Fitur yang Dianalisis")
-    st.write("- Usia Kepala Keluarga")
-    st.write("- Pendapatan Bulanan")
-    st.write("- Jumlah Anggota Keluarga")
-    st.write("- Kepemilikan Rumah")
-    st.write("**Target:** Status_Kesejahteraan (Layak / Tidak Layak)")
 
 # Upload & Prediksi
 elif page == "Upload Dataset & Prediksi":
@@ -146,9 +132,6 @@ elif page == "Upload Dataset & Prediksi":
     with tab1:
         st.header("Upload Dataset")
         uploaded_file = st.file_uploader("Pilih file dataset (CSV atau Excel)", type=['csv', 'xlsx', 'xls'])
-        dummy_df = load_dummy_data()
-        csv = dummy_df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Contoh Dataset CSV", csv, "contoh_dataset.csv", "text/csv")
 
         if uploaded_file is not None:
             try:
