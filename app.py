@@ -6,10 +6,9 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import LabelEncoder
 from datetime import datetime
+import io  # Untuk handling download Excel
 
-# ==============================
 # Konfigurasi halaman
-# ==============================
 st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
 
 # Inisialisasi session state
@@ -28,10 +27,7 @@ if 'le_target' not in st.session_state:
 if 'dataset' not in st.session_state:
     st.session_state.dataset = None
 
-
-# ==============================
-# Fungsi dataset dummy
-# ==============================
+# Fungsi untuk membuat dataset dummy (hanya Ya/Tidak untuk Kepemilikan_Rumah)
 @st.cache_data
 def load_dummy_data():
     data = {
@@ -44,142 +40,65 @@ def load_dummy_data():
         'Jumlah_Anggota_Keluarga': [4, 6, 3, 5, 2, 7, 4, 8, 1, 5],
         'Usia_Kepala_Keluarga': [45, 30, 55, 40, 60, 35, 50, 28, 65, 42],
         'Pendidikan_Kepala_Keluarga': ['SD', 'SMP', 'SMA', 'SD', 'SMP', 'SMA', 'SD', 'SMP', 'SMA', 'SD'],
-        'Pekerjaan_Kepala_Keluarga': ['Petani', 'Ibu Rumah Tangga', 'Pegawai Negeri', 'Buruh', 'Petani', 'Wiraswasta', 'Buruh', 'Ibu Rumah Tangga', 'Pensiunan', 'Petani'],
+        'Pekerjaan_Kepala_Keluarga': ['Petani', 'IRT', 'PNS', 'Buruh', 'Petani', 'Wiraswasta', 'Buruh', 'IRT', 'Pensiunan', 'Petani'],
         'Pendapatan_Bulanan': [1500000, 800000, 2000000, 1200000, 500000, 900000, 1800000, 600000, 400000, 1100000],
         'Pengeluaran_Bulanan': [1400000, 750000, 1900000, 1150000, 480000, 850000, 1700000, 580000, 380000, 1050000],
         'Kepemilikan_Rumah': ['Tidak', 'Tidak', 'Ya', 'Tidak', 'Tidak', 'Tidak', 'Ya', 'Tidak', 'Tidak', 'Tidak'],
-        'Jenis_Rumah': ['Sewa', 'Sewa', 'Milik', 'Sewa', 'Sewa', 'Sewa', 'Milik', 'Sewa', 'Sewa', 'Sewa'],
-        'Sumber_Air': ['PDAM', 'Sumur', 'PDAM', 'Sumur', 'Sungai', 'PDAM', 'Sumur', 'Sungai', 'PDAM', 'Sumur'],
-        'Sumber_Listrik': ['PLN', 'PLN', 'PLN', 'Genset', 'PLN', 'PLN', 'Genset', 'PLN', 'PLN', 'Genset'],
-        'Aset_Dimiliki': ['Sepeda Motor', 'Tidak Ada', 'Mobil, Sepeda Motor', 'Sepeda Motor', 'Tidak Ada', 'Sepeda Motor', 'Tidak Ada', 'Sepeda Motor', 'Tidak Ada', 'Sepeda Motor'],
-        'BPJS': ['Ya', 'Tidak', 'Ya', 'Tidak', 'Tidak', 'Ya', 'Tidak', 'Tidak', 'Ya', 'Tidak'],
         'Status_Kesejahteraan': ['Tidak Layak', 'Layak', 'Tidak Layak', 'Layak', 'Layak', 'Layak', 'Tidak Layak', 'Layak', 'Layak', 'Layak']
     }
     return pd.DataFrame(data)
 
-
-# ==============================
-# Fungsi training model
-# ==============================
+# Fungsi untuk melatih model
 def train_model(data):
     df = data.copy()
 
-    if df is None or len(df) == 0:
-        st.error("❌ Dataset kosong, tidak bisa melatih model.")
-        return None, None, None, 0, {}
-
-    if 'Kepemilikan_Rumah' not in df.columns or 'Status_Kesejahteraan' not in df.columns:
-        st.error("❌ Dataset tidak sesuai format.")
-        return None, None, None, 0, {}
-
-    # Validasi nilai kategori
-    unique_rumah = set(df['Kepemilikan_Rumah'].dropna().unique())
-    if unique_rumah - {'Ya', 'Tidak'}:
-        st.error("❌ Kolom 'Kepemilikan_Rumah' hanya boleh berisi 'Ya' atau 'Tidak'.")
-        return None, None, None, 0, {}
-
-    unique_target = set(df['Status_Kesejahteraan'].dropna().unique())
-    if unique_target - {'Layak', 'Tidak Layak'}:
-        st.error("❌ Kolom 'Status_Kesejahteraan' hanya boleh berisi 'Layak' atau 'Tidak Layak'.")
-        return None, None, None, 0, {}
-
-    # Encoding
+    # Encoding Kepemilikan_Rumah (Ya/Tidak)
     le_rumah = LabelEncoder()
     df['Kepemilikan_Rumah_encoded'] = le_rumah.fit_transform(df['Kepemilikan_Rumah'])
 
+    # Encoding target
     le_target = LabelEncoder()
     df['Status_Kesejahteraan_encoded'] = le_target.fit_transform(df['Status_Kesejahteraan'])
 
-    # Fitur & target
     X = df[['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga', 'Kepemilikan_Rumah_encoded']]
     y = df['Status_Kesejahteraan_encoded']
 
-    # Train-test split
-    if len(df) >= 5:
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    else:
-        X_train, y_train = X, y
-        X_test, y_test = X, y
-        st.warning("⚠️ Dataset kecil (<5 baris), training tanpa evaluasi split.")
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Train model
     model = GaussianNB()
     model.fit(X_train, y_train)
 
-    # Evaluasi
-    if len(y_test) > 0:
-        y_pred = model.predict(X_test)
-        try:
-            y_test_labels = le_target.inverse_transform(y_test)
-            y_pred_labels = le_target.inverse_transform(y_pred)
-            accuracy = accuracy_score(y_test, y_pred)
-            report = classification_report(y_test_labels, y_pred_labels, output_dict=True)
-        except Exception:
-            accuracy = 0
-            report = {}
-    else:
-        accuracy = 0
-        report = {}
+    y_pred = model.predict(X_test)
+    y_test_labels = le_target.inverse_transform(y_test)
+    y_pred_labels = le_target.inverse_transform(y_pred)
+    accuracy = accuracy_score(y_test, y_pred)
+
+    report = classification_report(y_test_labels, y_pred_labels, output_dict=True)
 
     return model, le_rumah, le_target, accuracy, report
 
-
-# ==============================
 # Fungsi prediksi tunggal
-# ==============================
 def predict_single(model, le_rumah, le_target, data):
-    try:
-        # Validasi numerik
-        usia = float(data['usia'])
-        pendapatan = float(data['pendapatan'])
-        jumlah_anggota = float(data['jumlah_anggota'])
+    rumah_encoded = le_rumah.transform([data['kepemilikan_rumah']])[0]
+    input_data = np.array([[data['usia'], data['pendapatan'], data['jumlah_anggota'], rumah_encoded]])
 
-        if pd.isna(usia) or pd.isna(pendapatan) or pd.isna(jumlah_anggota):
-            raise ValueError("Input numerik tidak boleh kosong.")
+    prediksi_encoded = model.predict(input_data)[0]
+    prob = model.predict_proba(input_data)[0]
 
-        # Validasi kategori
-        if data['kepemilikan_rumah'] not in le_rumah.classes_:
-            raise ValueError(f"Kepemilikan Rumah harus salah satu dari: {list(le_rumah.classes_)}")
+    prediksi = le_target.inverse_transform([prediksi_encoded])[0]
+    return prediksi, prob
 
-        rumah_encoded = le_rumah.transform([data['kepemilikan_rumah']])[0]
-        input_data = np.array([[usia, pendapatan, jumlah_anggota, rumah_encoded]])
-
-        prediksi_encoded = model.predict(input_data)[0]
-        prob = model.predict_proba(input_data)[0]
-
-        prediksi = le_target.inverse_transform([prediksi_encoded])[0]
-
-        # Probabilitas aman
-        class_to_idx = {cls: idx for idx, cls in enumerate(le_target.classes_)}
-        prob_layak = prob[class_to_idx['Layak']] if 'Layak' in class_to_idx else 0
-        prob_tidak = prob[class_to_idx['Tidak Layak']] if 'Tidak Layak' in class_to_idx else 0
-
-        return prediksi, [prob_layak, prob_tidak]
-
-    except ValueError as e:
-        st.error(f"❌ Error prediksi: {e}")
-        return None, None
-    except Exception as e:
-        st.error(f"❌ Error tak terduga: {e}")
-        return None, None
-
-
-# ==============================
-# Sidebar Navigasi
-# ==============================
+# Sidebar
 st.sidebar.title("Navigasi Sistem")
 page = st.sidebar.selectbox("Pilih Halaman:", ["Dashboard Informasi", "Upload Dataset & Prediksi", "Riwayat Prediksi"])
 
-# ==============================
-# Halaman Dashboard
-# ==============================
+# Halaman 1: Dashboard
 if page == "Dashboard Informasi":
     st.title("🏠 Dashboard Informasi")
     st.subheader("Klasifikasi Penerima Bantuan Sosial di Desa Cikembar")
     st.markdown("---")
 
     col1, col2, col3 = st.columns(3)
-
     with col1:
         if st.session_state.dataset is not None:
             st.metric("Total Dataset", f"{len(st.session_state.dataset)} Warga", "Data Terupload")
@@ -196,81 +115,123 @@ if page == "Dashboard Informasi":
         st.metric("Riwayat Prediksi", f"{len(st.session_state.riwayat_prediksi)}", "Hasil Tersimpan")
 
     st.markdown("---")
-    st.write("👈 Pilih menu di sidebar untuk melanjutkan.")
+    st.header("📋 Deskripsi Sistem")
+    st.markdown("""
+    Sistem ini menggunakan algoritma Naive Bayes untuk mengklasifikasikan warga Desa Cikembar 
+    apakah layak menerima bantuan sosial atau tidak.
+    """)
 
-
-# ==============================
-# Halaman Upload & Prediksi
-# ==============================
+# Halaman 2: Upload & Prediksi
 elif page == "Upload Dataset & Prediksi":
-    st.title("📂 Upload Dataset & Prediksi")
+    st.title("📁 Upload Dataset & Prediksi")
 
-    # Upload file
-    uploaded_file = st.file_uploader("Upload file Excel/CSV:", type=["xlsx", "csv"])
-    if uploaded_file:
-        try:
-            if uploaded_file.name.endswith("csv"):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
-            st.session_state.dataset = df
-            st.success("✅ Dataset berhasil diupload.")
-        except Exception as e:
-            st.error(f"❌ Gagal membaca file: {e}")
-            st.session_state.dataset = None
-    else:
-        st.info("Menggunakan dataset dummy.")
-        st.session_state.dataset = load_dummy_data()
+    tab1, tab2 = st.tabs(["Upload Dataset", "Prediksi Manual"])
 
-    # Training
-    if st.button("Latih Model"):
-        model, le_rumah, le_target, acc, report = train_model(st.session_state.dataset)
-        if model:
-            st.session_state.model = model
-            st.session_state.le_rumah = le_rumah
-            st.session_state.le_target = le_target
-            st.success(f"✅ Model berhasil dilatih. Akurasi: {acc:.2f}")
-            st.json(report)
+    with tab1:
+        uploaded_file = st.file_uploader("Pilih file dataset (CSV atau Excel)", type=['csv', 'xlsx', 'xls'])
 
-    st.markdown("---")
-    st.subheader("🔮 Prediksi Manual")
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    df = pd.read_csv(uploaded_file)
+                else:
+                    df = pd.read_excel(uploaded_file)
 
-    if st.session_state.model:
-        with st.form("form_prediksi"):
-            usia = st.number_input("Usia Kepala Keluarga", min_value=18, max_value=100, value=40)
-            pendapatan = st.number_input("Pendapatan Bulanan", min_value=0, step=100000, value=1000000)
-            jumlah = st.number_input("Jumlah Anggota Keluarga", min_value=1, max_value=20, value=4)
-            kepemilikan = st.selectbox("Kepemilikan Rumah", ["Ya", "Tidak"])
+                required_columns = ['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga', 'Kepemilikan_Rumah', 'Status_Kesejahteraan']
+                if not all(col in df.columns for col in required_columns):
+                    st.error(f"❌ File harus memiliki kolom: {', '.join(required_columns)}")
+                else:
+                    df = df.dropna(subset=required_columns)
+                    st.session_state.dataset = df
+                    st.success("✅ Dataset berhasil diupload!")
+                    st.dataframe(df.head())
 
-            submitted = st.form_submit_button("Prediksi")
-            if submitted:
+                    if st.button("🚀 Latih Model dengan Dataset Ini"):
+                        with st.spinner("Melatih model Naive Bayes..."):
+                            model, le_rumah, le_target, accuracy, report = train_model(df)
+                            st.session_state.model = model
+                            st.session_state.le_rumah = le_rumah
+                            st.session_state.le_target = le_target
+                            st.success(f"✅ Model berhasil dilatih dengan akurasi: {accuracy:.2%}")
+                            st.json(report)
+
+            except Exception as e:
+                st.error(f"❌ Error membaca file: {e}")
+        else:
+            st.info("📝 Silakan upload file CSV/Excel atau gunakan data dummy")
+            dummy_df = load_dummy_data()
+            st.dataframe(dummy_df.head())
+            st.download_button(
+                label="📥 Download Contoh Dataset CSV",
+                data=dummy_df.to_csv(index=False).encode('utf-8'),
+                file_name='contoh_dataset_cikembar.csv',
+                mime='text/csv'
+            )
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                dummy_df.to_excel(writer, index=False, sheet_name='Data Warga')
+            buffer.seek(0)
+            st.download_button(
+                label="📥 Download Contoh Dataset Excel",
+                data=buffer.getvalue(),
+                file_name='contoh_dataset_cikembar.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+
+    with tab2:
+        if st.session_state.model is None:
+            st.warning("⚠️ Latih model terlebih dahulu")
+        else:
+            col1, col2 = st.columns(2)
+            with col1:
+                usia = st.number_input("Usia Kepala Keluarga", min_value=18, max_value=100, value=40)
+                pendapatan = st.number_input("Pendapatan Bulanan (Rp)", min_value=0, max_value=10000000, value=1500000)
+            with col2:
+                jumlah_anggota = st.number_input("Jumlah Anggota Keluarga", min_value=1, max_value=20, value=4)
+                kepemilikan_rumah = st.selectbox("Kepemilikan Rumah?", ["Ya", "Tidak"])
+
+            if st.button("🔮 Prediksi Kelayakan"):
                 data_input = {
-                    "usia": usia,
-                    "pendapatan": pendapatan,
-                    "jumlah_anggota": jumlah,
-                    "kepemilikan_rumah": kepemilikan
+                    'usia': usia,
+                    'pendapatan': pendapatan,
+                    'jumlah_anggota': jumlah_anggota,
+                    'kepemilikan_rumah': kepemilikan_rumah
                 }
-                hasil, prob = predict_single(st.session_state.model, st.session_state.le_rumah, st.session_state.le_target, data_input)
+                prediksi, prob = predict_single(st.session_state.model, st.session_state.le_rumah, st.session_state.le_target, data_input)
+                riwayat = {
+                    'tanggal': datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    'data': data_input,
+                    'prediksi': prediksi,
+                    'probabilitas': prob
+                }
+                st.session_state.riwayat_prediksi.append(riwayat)
 
-                if hasil:
-                    st.success(f"Hasil Prediksi: **{hasil}**")
-                    st.write(f"Probabilitas Layak: {prob[0]:.2f}, Tidak Layak: {prob[1]:.2f}")
+                st.header("🎯 Hasil Prediksi")
+                if prediksi == 'Layak':
+                    st.success("✅ **LAYAK MENERIMA BANTUAN SOSIAL**")
+                else:
+                    st.error("❌ **TIDAK LAYAK / BELUM BERHAK**")
+                st.metric("Probabilitas Layak", f"{prob[0]:.2%}")
+                st.metric("Probabilitas Tidak Layak", f"{prob[1]:.2%}")
 
-                    # Simpan ke riwayat
-                    st.session_state.riwayat_prediksi.append({
-                        "Waktu": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "Input": data_input,
-                        "Hasil": hasil,
-                        "Probabilitas": prob
-                    })
-
-
-# ==============================
-# Halaman Riwayat
-# ==============================
+# Halaman 3: Riwayat
 elif page == "Riwayat Prediksi":
-    st.title("📝 Riwayat Prediksi")
-    if st.session_state.riwayat_prediksi:
-        st.dataframe(pd.DataFrame(st.session_state.riwayat_prediksi))
+    st.title("📋 Riwayat Prediksi")
+
+    if not st.session_state.riwayat_prediksi:
+        st.info("📝 Belum ada riwayat prediksi.")
     else:
-        st.info("Belum ada riwayat prediksi.")
+        for i, riwayat in enumerate(reversed(st.session_state.riwayat_prediksi), 1):
+            with st.expander(f"Prediksi #{i} - {riwayat['tanggal']}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write("**Data Input:**")
+                    st.write(f"Usia: {riwayat['data']['usia']} tahun")
+                    st.write(f"Pendapatan: Rp {riwayat['data']['pendapatan']:,}")
+                    st.write(f"Jumlah Anggota: {riwayat['data']['jumlah_anggota']} orang")
+                    st.write(f"Kepemilikan Rumah: {riwayat['data']['kepemilikan_rumah']}")
+                with col2:
+                    st.write("**Hasil Prediksi:**")
+                    st.write(f"Prediksi: {riwayat['prediksi']}")
+                    st.write(f"Probabilitas Layak: {riwayat['probabilitas'][0]:.2%}")
+                    st.write(f"Probabilitas Tidak Layak: {riwayat['probabilitas'][1]:.2%}")
