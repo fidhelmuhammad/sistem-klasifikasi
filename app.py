@@ -59,7 +59,7 @@ def load_dummy_data():
 def train_model(data):
     df = data.copy()
     
-    # Validasi kolom kategorikal
+    # Validasi kolom kategorikal (handle NaN)
     if 'Kepemilikan_Rumah' not in df.columns or df['Kepemilikan_Rumah'].nunique() > 2 or set(df['Kepemilikan_Rumah'].dropna().unique()) - {'Ya', 'Tidak'}:
         st.error("Kolom 'Kepemilikan_Rumah' harus hanya berisi 'Ya' atau 'Tidak'.")
         return None, None, None, 0, {}
@@ -224,26 +224,4 @@ elif page == "Upload Dataset & Prediksi":
                     # Bersihkan data jika ada NaN atau invalid
                     initial_len = len(df)
                     df = df.dropna(subset=required_columns)
-                    if len(df) == 0:
-                        st.error("❌ Dataset kosong setelah pembersihan. Periksa data.")
-                    elif len(df) < initial_len:
-                        st.warning(f"⚠️ {initial_len - len(df)} baris dihapus karena data kosong/invalid.")
-                    
-                    if len(df) > 0:
-                        st.session_state.dataset = df
-                        st.success("✅ Dataset berhasil diupload!")
-                        st.dataframe(df.head())
-                        
-                        if st.button("🚀 Latih Model dengan Dataset Ini"):
-                            with st.spinner("Melatih model Naive Bayes..."):
-                                model, le_rumah, le_target, accuracy, report = train_model(df)
-                                if model is not None:
-                                    st.session_state.model = model
-                                    st.session_state.le_rumah = le_rumah
-                                    st.session_state.le_target = le_target
-                                    
-                                    st.success(f"✅ Model berhasil dilatih dengan akurasi: {accuracy:.2%}")
-                                    
-                                    col1, col2 = st.columns(2)
-                                    with col1:
-                                        st.metric("Akurasi Model", f
+                    if len(df
