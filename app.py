@@ -60,11 +60,11 @@ def train_model(data):
     df = data.copy()
     
     # Validasi kolom kategorikal
-    if df['Kepemilikan_Rumah'].nunique() > 2 or set(df['Kepemilikan_Rumah'].unique()) - {'Ya', 'Tidak'}:
+    if 'Kepemilikan_Rumah' not in df.columns or df['Kepemilikan_Rumah'].nunique() > 2 or set(df['Kepemilikan_Rumah'].dropna().unique()) - {'Ya', 'Tidak'}:
         st.error("Kolom 'Kepemilikan_Rumah' harus hanya berisi 'Ya' atau 'Tidak'.")
         return None, None, None, 0, {}
     
-    if df['Status_Kesejahteraan'].nunique() > 2 or set(df['Status_Kesejahteraan'].unique()) - {'Layak', 'Tidak Layak'}:
+    if 'Status_Kesejahteraan' not in df.columns or df['Status_Kesejahteraan'].nunique() > 2 or set(df['Status_Kesejahteraan'].dropna().unique()) - {'Layak', 'Tidak Layak'}:
         st.error("Kolom 'Status_Kesejahteraan' harus hanya berisi 'Layak' atau 'Tidak Layak'.")
         return None, None, None, 0, {}
     
@@ -222,10 +222,14 @@ elif page == "Upload Dataset & Prediksi":
                     st.info("Pastikan nama kolom persis seperti: Usia_Kepala_Keluarga, Pendapatan_Bulanan, dll.")
                 else:
                     # Bersihkan data jika ada NaN atau invalid
+                    initial_len = len(df)
                     df = df.dropna(subset=required_columns)
                     if len(df) == 0:
                         st.error("❌ Dataset kosong setelah pembersihan. Periksa data.")
-                    else:
+                    elif len(df) < initial_len:
+                        st.warning(f"⚠️ {initial_len - len(df)} baris dihapus karena data kosong/invalid.")
+                    
+                    if len(df) > 0:
                         st.session_state.dataset = df
                         st.success("✅ Dataset berhasil diupload!")
                         st.dataframe(df.head())
@@ -242,22 +246,4 @@ elif page == "Upload Dataset & Prediksi":
                                     
                                     col1, col2 = st.columns(2)
                                     with col1:
-                                        st.metric("Akurasi Model", f"{accuracy:.2%}")
-                                    with col2:
-                                        st.metric("Jumlah Data", len(df))
-                                    
-                                    # Tampilkan laporan singkat
-                                    st.subheader("Laporan Klasifikasi")
-                                    st.json(report)
-                                else:
-                                    st.error("❌ Gagal melatih model. Periksa data kategorikal.")
-                                
-            except Exception as e:
-                st.error(f"❌ Error membaca file: {e}. Pastikan file tidak rusak dan format kolom benar.")
-        else:
-            st.info("📝 Silakan upload file CSV atau Excel dengan format yang sesuai")
-            st.markdown("""
-            **Format file yang diharapkan (kolom wajib):**
-            - Usia_Kepala_Keluarga (number)
-            - Pendapatan_Bulanan (number) 
-            - Jumlah_Angg
+                                        st.metric("Akurasi Model", f
