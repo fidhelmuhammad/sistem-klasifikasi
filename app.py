@@ -8,6 +8,7 @@ from sklearn.preprocessing import LabelEncoder
 import pickle
 import os
 from datetime import datetime
+import io  # Untuk handling file Excel/CSV
 
 # Konfigurasi halaman
 st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
@@ -24,6 +25,18 @@ if 'le_rumah' not in st.session_state:
 
 if 'dataset' not in st.session_state:
     st.session_state.dataset = None
+
+# Fungsi untuk membuat dataset dummy (sebagai contoh jika tidak upload)
+@st.cache_data
+def load_dummy_data():
+    data = {
+        'usia_kepala_keluarga': [45, 30, 55, 40, 60, 35, 50, 28, 65, 42, 38, 52, 47, 33, 58],
+        'pendapatan_bulanan': [1500000, 800000, 2000000, 1200000, 500000, 900000, 1800000, 600000, 400000, 1100000, 700000, 2200000, 1300000, 850000, 450000],
+        'jumlah_anggota_keluarga': [4, 6, 3, 5, 2, 7, 4, 8, 1, 5, 6, 3, 4, 7, 2],
+        'memiliki_rumah': ['Tidak', 'Tidak', 'Ya', 'Tidak', 'Tidak', 'Tidak', 'Ya', 'Tidak', 'Tidak', 'Tidak', 'Tidak', 'Ya', 'Ya', 'Tidak', 'Tidak'],
+        'berhak_bantuan': [0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 1, 1]  # 1: Berhak, 0: Tidak Berhak
+    }
+    return pd.DataFrame(data)
 
 # Fungsi untuk melatih model
 def train_model(data):
@@ -71,7 +84,10 @@ if page == "Dashboard Informasi":
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Total Dataset", "15 Warga", "Data Simulasi")
+        if st.session_state.dataset is not None:
+            st.metric("Total Dataset", f"{len(st.session_state.dataset)} Warga", "Data Terupload")
+        else:
+            st.metric("Total Dataset", "15 Warga", "Data Dummy")
     
     with col2:
         if st.session_state.model:
@@ -119,42 +135,68 @@ elif page == "Upload Dataset & Prediksi":
     with tab1:
         st.header("Upload Dataset")
         
-        uploaded_file = st.file_uploader("Pilih file CSV", type="csv")
+        # Dukung CSV dan Excel (.xlsx, .xls)
+        uploaded_file = st.file_uploader("Pilih file dataset (CSV atau Excel)", type=['csv', 'xlsx', 'xls'])
         
         if uploaded_file is not None:
             try:
-                df = pd.read_csv(uploaded_file)
-                st.session_state.dataset = df
+                # Baca file berdasarkan ekstensi
+                file_extension = uploaded_file.name.split('.')[-1].lower()
+                if file_extension == 'csv':
+                    df = pd.read_csv(uploaded_file)
+                else:  # Excel
+                    df = pd.read_excel(uploaded_file)
                 
-                st.success("✅ Dataset berhasil diupload!")
-                st.dataframe(df.head())
-                
-                if st.button("🚀 Latih Model dengan Dataset Ini"):
-                    with st.spinner("Melatih model Naive Bayes..."):
-                        model, le_rumah, accuracy, report = train_model(df)
-                        st.session_state.model = model
-                        st.session_state.le_rumah = le_rumah
-                        
-                        st.success(f"✅ Model berhasil dilatih dengan akurasi: {accuracy:.2%}")
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("Akurasi Model", f"{accuracy:.2%}")
-                        with col2:
-                            st.metric("Jumlah Data", len(df))
-                        
+                # Validasi kolom dasar
+                required_columns = ['usia_kepala_keluarga', 'pendapatan_bulanan', 'jumlah_anggota_keluarga', 'memiliki_rumah', 'berhak_bantuan']
+                if not all(col in df.columns for col in required_columns):
+                    st.error(f"❌ File harus memiliki kolom: {', '.join(required_columns)}. Kolom saat ini: {', '.join(df.columns)}")
+                else:
+                    st.session_state.dataset = df
+                    st.success("✅ Dataset berhasil diupload!")
+                    st.dataframe(df.head())
+                    
+                    if st.button("🚀 Latih Model dengan Dataset Ini"):
+                        with st.spinner("Melatih model Naive Bayes..."):
+                            model, le_rumah, accuracy, report = train_model(df)
+                            st.session_state.model = model
+                            st.session_state.le_rumah = le_rumah
+                            
+                            st.success(f"✅ Model berhasil dilatih dengan akurasi: {accuracy:.2%}")
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("Akurasi Model", f"{accuracy:.2%}")
+                            with col2:
+                                st.metric("Jumlah Data", len(df))
+                            
+                            # Tampilkan laporan singkat
+                            st.subheader("Laporan Klasifikasi")
+                            st.json(report)
+                            
             except Exception as e:
-                st.error(f"❌ Error membaca file: {e}")
+                st.error(f"❌ Error membaca file: {e}. Pastikan file tidak rusak dan format kolom benar.")
         else:
-            st.info("📝 Silakan upload file CSV dengan format yang sesuai")
+            st.info("📝 Silakan upload file CSV atau Excel dengan format yang sesuai")
             st.markdown("""
-            **Format CSV yang diharapkan:**
-            - usia_kepala_keluarga (number)
-            - pendapatan_bulanan (number) 
-            - jumlah_anggota_keluarga (number)
-            - memiliki_rumah (Ya/Tidak)
-            - berhak_bantuan (0/1)
+            **Format file yang diharapkan:**
+            - **Kolom Wajib:** usia_kepala_keluarga (number), pendapatan_bulanan (number), jumlah_anggota_keluarga (number), memiliki_rumah (Ya/Tidak), berhak_bantuan (0/1)
+            - **Contoh Dataset Dummy (untuk referensi):**
             """)
+            dummy_df = load_dummy_data()
+            st.dataframe(dummy_df.head())
+            st.download_button(
+                label="📥 Download Contoh Dataset CSV",
+                data=dummy_df.to_csv(index=False).encode('utf-8'),
+                file_name='contoh_dataset_cikembar.csv',
+                mime='text/csv'
+            )
+            st.download_button(
+                label="📥 Download Contoh Dataset Excel",
+                data=dummy_df.to_excel(index=False).encode('utf-8'),
+                file_name='contoh_dataset_cikembar.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
     
     with tab2:
         st.header("Prediksi Manual")
