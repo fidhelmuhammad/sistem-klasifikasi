@@ -53,9 +53,8 @@ elif menu == "📊 Pelatihan Model":
             if name.endswith(".csv"):
                 df = pd.read_csv(uploaded_file)
             else:
-                # requires openpyxl
                 df = pd.read_excel(uploaded_file, engine="openpyxl")
-        except ImportError as e:
+        except ImportError:
             st.error("Paket `openpyxl` belum terpasang. Tambahkan `openpyxl` ke requirements.txt dan re-deploy.")
             st.stop()
         except Exception as e:
@@ -80,7 +79,7 @@ elif menu == "📊 Pelatihan Model":
             st.info("Pilih setidaknya 1 fitur untuk melatih model.")
         else:
             st.write(f"Fitur terpilih: {features}")
-            # tombol latih model agar tidak auto re-run tiap change
+
             if st.button("Latih Model"):
                 X = df[features].copy()
                 y = df[target].copy()
@@ -98,9 +97,15 @@ elif menu == "📊 Pelatihan Model":
                     transformers.append(("num", numeric_transformer, numeric_features))
 
                 if categorical_features:
+                    # kompatibilitas versi sklearn
+                    try:
+                        onehot = OneHotEncoder(handle_unknown="ignore", sparse_output=False)  # sklearn >= 1.4
+                    except TypeError:
+                        onehot = OneHotEncoder(handle_unknown="ignore", sparse=False)        # sklearn < 1.4
+
                     categorical_transformer = Pipeline([
                         ("imputer", SimpleImputer(strategy="most_frequent")),
-                        ("onehot", OneHotEncoder(handle_unknown="ignore", sparse=False))
+                        ("onehot", onehot)
                     ])
                     transformers.append(("cat", categorical_transformer, categorical_features))
 
@@ -111,7 +116,6 @@ elif menu == "📊 Pelatihan Model":
                 preprocessor = ColumnTransformer(transformers=transformers, remainder="drop")
                 pipeline = Pipeline([("preprocessor", preprocessor), ("clf", GaussianNB())])
 
-                # split data (jika memungkinkan stratify supaya distribusi target terjaga)
                 try:
                     strat = y if y.nunique() > 1 else None
                     X_train, X_test, y_train, y_test = train_test_split(
@@ -121,14 +125,13 @@ elif menu == "📊 Pelatihan Model":
                     st.error(f"Gagal membagi data: {e}")
                     st.stop()
 
-                # training
                 try:
                     pipeline.fit(X_train, y_train)
                 except Exception as e:
                     st.error(f"Gagal melatih model: {e}")
                     st.stop()
 
-                # simpan model dan metadata fitur
+                # simpan model + metadata fitur
                 st.session_state.model = pipeline
                 st.session_state.features = features
                 feat_meta = {}
@@ -142,7 +145,6 @@ elif menu == "📊 Pelatihan Model":
                         }
                     else:
                         vals = X[col].dropna().unique().tolist()
-                        # convert to string so selectbox tidak crash on mixed types
                         vals = [str(v) for v in vals]
                         feat_meta[col] = {"type": "categorical", "values": vals}
                 st.session_state.feature_meta = feat_meta
@@ -164,7 +166,6 @@ elif menu == "📊 Pelatihan Model":
                 ax.set_yticklabels(labels)
                 plt.xlabel("Predicted")
                 plt.ylabel("Actual")
-                # beri angka pada sel
                 for i in range(cm.shape[0]):
                     for j in range(cm.shape[1]):
                         ax.text(j, i, cm[i, j], ha="center", va="center")
@@ -179,7 +180,7 @@ elif menu == "🔮 Prediksi Baru":
     if st.session_state.model is None:
         st.warning("Model belum dilatih. Silakan latih model pada menu 'Pelatihan Model' terlebih dahulu.")
     else:
-        st.write("Masukkan nilai untuk tiap fitur (tipe input disesuaikan otomatis).")
+        st.write("Masukkan nilai untuk tiap fitur:")
         input_dict = {}
         for col, meta in st.session_state.feature_meta.items():
             if meta["type"] == "numeric":
@@ -189,7 +190,6 @@ elif menu == "🔮 Prediksi Baru":
             else:
                 options = meta.get("values", [])
                 if not options:
-                    # fallback ke textbox
                     val = st.text_input(col, value="")
                 else:
                     val = st.selectbox(col, options)
@@ -200,7 +200,6 @@ elif menu == "🔮 Prediksi Baru":
             try:
                 pred = st.session_state.model.predict(Xnew)[0]
                 st.success(f"Hasil Prediksi: **{pred}**")
-                # tunjukkan probabilitas kalau tersedia
                 if hasattr(st.session_state.model.named_steps["clf"], "predict_proba"):
                     proba = st.session_state.model.predict_proba(Xnew)[0]
                     classes = st.session_state.model.named_steps["clf"].classes_
