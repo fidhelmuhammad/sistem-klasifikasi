@@ -19,6 +19,27 @@ if "target" not in st.session_state:
 
 
 # ===============================
+# Fungsi untuk load dataset
+# ===============================
+def load_dataset():
+    option = st.radio("Pilih sumber data:", ["Upload File", "Gunakan Dataset Bawaan"])
+
+    df = None
+    if option == "Upload File":
+        uploaded_file = st.file_uploader("Upload file CSV atau Excel", type=["csv", "xlsx"])
+        if uploaded_file:
+            if uploaded_file.name.endswith(".csv"):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file)
+    else:
+        # ganti sesuai nama file dataset bawaan kamu
+        df = pd.read_excel("dataset_penduduk_cikembar_enriched.xlsx")
+
+    return df
+
+
+# ===============================
 # Sidebar Menu
 # ===============================
 menu = st.sidebar.radio(
@@ -45,27 +66,6 @@ if menu == "🏠 Beranda":
 
     👉 Silakan gunakan menu di **sidebar** untuk navigasi.
     """)
-
-
-# ===============================
-# Fungsi untuk load dataset
-# ===============================
-def load_dataset():
-    option = st.radio("Pilih sumber data:", ["Upload File", "Gunakan Dataset Bawaan"])
-
-    df = None
-    if option == "Upload File":
-        uploaded_file = st.file_uploader("Upload file CSV atau Excel", type=["csv", "xlsx"])
-        if uploaded_file:
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
-    else:
-        # Ganti nama file sesuai dataset di repo GitHub kamu
-        df = pd.read_excel("dataset_penduduk_cikembar_enriched.xlsx")
-
-    return df
 
 
 # ===============================
