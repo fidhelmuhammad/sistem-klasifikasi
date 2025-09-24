@@ -116,15 +116,18 @@ elif menu == "📊 Pelatihan Model":
                 preprocessor = ColumnTransformer(transformers=transformers, remainder="drop")
                 pipeline = Pipeline([("preprocessor", preprocessor), ("clf", GaussianNB())])
 
+                # split data (fallback kalau stratify gagal)
                 try:
-                    strat = y if y.nunique() > 1 else None
                     X_train, X_test, y_train, y_test = train_test_split(
-                        X, y, test_size=0.3, random_state=42, stratify=strat
+                        X, y, test_size=0.3, random_state=42, stratify=y
                     )
-                except Exception as e:
-                    st.error(f"Gagal membagi data: {e}")
-                    st.stop()
+                except ValueError:
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=0.3, random_state=42
+                    )
+                    st.warning("Stratify gagal karena ada kelas dengan jumlah terlalu sedikit. Data dibagi tanpa stratify.")
 
+                # training
                 try:
                     pipeline.fit(X_train, y_train)
                 except Exception as e:
