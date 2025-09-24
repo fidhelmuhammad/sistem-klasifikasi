@@ -60,11 +60,19 @@ def train_model(data):
     df = data.copy()
     
     # Validasi kolom kategorikal (handle NaN)
-    if 'Kepemilikan_Rumah' not in df.columns or df['Kepemilikan_Rumah'].nunique() > 2 or set(df['Kepemilikan_Rumah'].dropna().unique()) - {'Ya', 'Tidak'}:
+    if 'Kepemilikan_Rumah' not in df.columns or len(df) == 0:
+        st.error("Data tidak valid atau kolom 'Kepemilikan_Rumah' hilang.")
+        return None, None, None, 0, {}
+    unique_rumah = set(df['Kepemilikan_Rumah'].dropna().unique())
+    if len(unique_rumah) > 2 or unique_rumah - {'Ya', 'Tidak'}:
         st.error("Kolom 'Kepemilikan_Rumah' harus hanya berisi 'Ya' atau 'Tidak'.")
         return None, None, None, 0, {}
     
-    if 'Status_Kesejahteraan' not in df.columns or df['Status_Kesejahteraan'].nunique() > 2 or set(df['Status_Kesejahteraan'].dropna().unique()) - {'Layak', 'Tidak Layak'}:
+    if 'Status_Kesejahteraan' not in df.columns or len(df) == 0:
+        st.error("Data tidak valid atau kolom 'Status_Kesejahteraan' hilang.")
+        return None, None, None, 0, {}
+    unique_target = set(df['Status_Kesejahteraan'].dropna().unique())
+    if len(unique_target) > 2 or unique_target - {'Layak', 'Tidak Layak'}:
         st.error("Kolom 'Status_Kesejahteraan' harus hanya berisi 'Layak' atau 'Tidak Layak'.")
         return None, None, None, 0, {}
     
@@ -72,17 +80,20 @@ def train_model(data):
     le_rumah = LabelEncoder()
     df['Kepemilikan_Rumah_encoded'] = le_rumah.fit_transform(df['Kepemilikan_Rumah'])
     
-    # Encoding untuk target (Layak=0, Tidak Layak=1 secara alfabetis)
+    # Encoding untuk target
     le_target = LabelEncoder()
     df['Status_Kesejahteraan_encoded'] = le_target.fit_transform(df['Status_Kesejahteraan'])
     
     X = df[['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga', 'Kepemilikan_Rumah_encoded']]
     y = df['Status_Kesejahteraan_encoded']
     
+    if len(X) == 0 or len(y) == 0:
+        st.error("Data fitur atau target kosong setelah encoding.")
+        return None, None, None, 0, {}
+    
     if len(df) >= 5:
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     else:
-        # Jika data terlalu kecil, gunakan full data untuk train dan evaluasi
         X_train, y_train = X, y
         X_test, y_test = X, y
         st.warning("Dataset kecil (<5 baris), menggunakan full data untuk training tanpa split evaluasi.")
@@ -91,7 +102,7 @@ def train_model(data):
     model = GaussianNB()
     model.fit(X_train, y_train)
     
-    # Evaluasi (decode target untuk report)
+    # Evaluasi
     y_pred = model.predict(X_test)
     y_test_labels = le_target.inverse_transform(y_test)
     y_pred_labels = le_target.inverse_transform(y_pred)
@@ -104,6 +115,10 @@ def train_model(data):
 # Fungsi untuk melakukan prediksi
 def predict_single(model, le_rumah, le_target, data):
     try:
+        # Validasi input numerik
+        if np.isnan(data['usia']) or np.isnan(data['pendapatan']) or np.isnan(data['jumlah_anggota']):
+            raise ValueError("Input numerik (usia, pendapatan, jumlah anggota) tidak valid.")
+        
         # Validasi input encoder
         if data['kepemilikan_rumah'] not in le_rumah.classes_:
             raise ValueError(f"Kepemilikan Rumah harus salah satu dari: {list(le_rumah.classes_)}")
@@ -112,18 +127,19 @@ def predict_single(model, le_rumah, le_target, data):
         input_data = np.array([[data['usia'], data['pendapatan'], data['jumlah_anggota'], rumah_encoded]])
         
         prediksi_encoded = model.predict(input_data)[0]
-        prob = model.predict_proba(input_data)[0]  # Probabilitas [class_0, class_1]
+        prob = model.predict_proba(input_data)[0]
         
-        # Decode prediksi dan sesuaikan probabilitas berdasarkan urutan classes_
         prediksi = le_target.inverse_transform([prediksi_encoded])[0]
         
-        # Konfirmasi urutan: 'Layak' biasanya 0 (alfabetis), tapi cek
-        if le_target.classes_[0] == 'Layak':
-            prob_layak, prob_tidak = prob[0], prob[1]
-        else:
-            prob_layak, prob_tidak = prob[1], prob[0]  # Jika urutan terbalik
+        # Sesuaikan probabilitas berdasarkan classes_
+        class_to_idx = {cls: idx for idx, cls in enumerate(le_target.classes_)}
+        prob_layak = prob[class_to_idx['Layak']]
+        prob_tidak = prob[class_to_idx['Tidak Layak']]
         
         return prediksi, [prob_layak, prob_tidak]
+    except KeyError:
+        st.error("❌ Label target tidak dikenali. Pastikan dataset memiliki 'Layak' dan 'Tidak Layak'.")
+        return None, None
     except ValueError as e:
         st.error(f"❌ Error prediksi: {e}")
         return None, None
@@ -167,7 +183,7 @@ if page == "Dashboard Informasi":
     berdasarkan data demografis dan ekonomi menggunakan algoritma Naive Bayes.
     """)
     
-    # Fitur yang digunakan (disesuaikan)
+    # Fitur yang digunakan
     st.header("📊 Fitur yang Dianalisis")
     features = [
         "Usia Kepala Keluarga",
@@ -209,19 +225,4 @@ elif page == "Upload Dataset & Prediksi":
                 else:  # Excel
                     df = pd.read_excel(uploaded_file)
                 
-                # Konversi tipe data numerik (handle jika string)
-                numeric_cols = ['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga']
-                for col in numeric_cols:
-                    if col in df.columns:
-                        df[col] = pd.to_numeric(df[col], errors='coerce')
-                
-                # Validasi kolom dasar (sesuai struktur dataset baru)
-                required_columns = ['Usia_Kepala_Keluarga', 'Pendapatan_Bulanan', 'Jumlah_Anggota_Keluarga', 'Kepemilikan_Rumah', 'Status_Kesejahteraan']
-                if not all(col in df.columns for col in required_columns):
-                    st.error(f"❌ File harus memiliki kolom: {', '.join(required_columns)}. Kolom saat ini: {', '.join(df.columns)}")
-                    st.info("Pastikan nama kolom persis seperti: Usia_Kepala_Keluarga, Pendapatan_Bulanan, dll.")
-                else:
-                    # Bersihkan data jika ada NaN atau invalid
-                    initial_len = len(df)
-                    df = df.dropna(subset=required_columns)
-                    if len(df
+                # Konversi tipe data numerik (handle jika
