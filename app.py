@@ -126,7 +126,6 @@ def halaman_prediksi():
         option = st.radio("Pilih metode input:", ["Input Manual", "Upload CSV"])
 
         if option == "Input Manual":
-            # Contoh input sederhana (ubah sesuai dataset Anda)
             st.subheader("Masukkan Data")
             umur = st.number_input("Umur", min_value=18, max_value=100, value=30)
             pekerjaan = st.selectbox("Pekerjaan", ["Petani", "Buruh", "Pedagang", "Tidak Bekerja"])
