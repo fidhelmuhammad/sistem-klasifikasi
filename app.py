@@ -72,35 +72,34 @@ def load_model():
 st.sidebar.title("Navigasi")
 page = st.sidebar.selectbox("Pilih Halaman:", ["Informasi Sistem", "Pelatihan Model", "Prediksi Hasil"])
 
-# Halaman 1: Informasi Sistem
+# Halaman 1: Informasi Sistem (menggunakan teks persis dari permintaan)
 if page == "Informasi Sistem":
     st.title("Klasifikasi Penerima Bantuan Sosial di Desa Cikembar menggunakan Algoritma Naive Bayes")
     
     st.header("Deskripsi Sistem")
-    st.write("""
-    Sistem ini dirancang untuk mengklasifikasikan warga Desa Cikembar yang berhak menerima bantuan sosial berdasarkan data demografis dan ekonomi mereka. 
-    Menggunakan algoritma Naive Bayes, sistem ini memproses fitur-fitur seperti usia kepala keluarga, pendapatan bulanan, jumlah anggota keluarga, 
-    dan status kepemilikan rumah untuk memprediksi apakah seorang warga layak mendapatkan bantuan atau tidak.
-    
+    st.markdown("""
+    Sistem ini dirancang untuk mengklasifikasikan warga Desa Cikembar yang berhak menerima bantuan sosial berdasarkan data demografis dan ekonomi mereka. Menggunakan algoritma Naive Bayes, sistem ini memproses fitur-fitur seperti usia kepala keluarga, pendapatan bulanan, jumlah anggota keluarga, dan status kepemilikan rumah untuk memprediksi apakah seorang warga layak mendapatkan bantuan atau tidak.
+
     Data yang digunakan bersifat simulasi untuk demonstrasi, tetapi dapat diganti dengan data real dari desa.
     """)
     
     st.header("Tujuan Sistem")
-    st.write("""
-    - Memberikan rekomendasi akurat untuk distribusi bantuan sosial agar tepat sasaran.
-    - Mengoptimalkan proses seleksi penerima bantuan menggunakan machine learning.
-    - Membantu pemerintah desa dalam pengambilan keputusan berbasis data untuk mengurangi kemiskinan dan ketidakadilan sosial.
+    st.markdown("""
+    Memberikan rekomendasi akurat untuk distribusi bantuan sosial agar tepat sasaran.
+    Mengoptimalkan proses seleksi penerima bantuan menggunakan machine learning.
+    Membantu pemerintah desa dalam pengambilan keputusan berbasis data untuk mengurangi kemiskinan dan ketidakadilan sosial.
     """)
     
     st.header("Manfaat Sistem")
-    st.write("""
-    - **Efisiensi**: Mengurangi waktu dan biaya manual dalam verifikasi penerima bantuan.
-    - **Akurasi**: Algoritma Naive Bayes memberikan prediksi probabilistik yang andal berdasarkan asumsi independensi fitur.
-    - **Transparansi**: Sistem dapat menampilkan alasan prediksi, sehingga proses lebih transparan.
-    - **Skalabilitas**: Dapat diintegrasikan dengan data real-time untuk pemantauan berkelanjutan di Desa Cikembar.
+    st.markdown("""
+    Efisiensi: Mengurangi waktu dan biaya manual dalam verifikasi penerima bantuan.
+    Akurasi: Algoritma Naive Bayes memberikan prediksi probabilistik yang andal berdasarkan asumsi independensi fitur.
+    Transparansi: Sistem dapat menampilkan alasan prediksi, sehingga proses lebih transparan.
+    Skalabilitas: Dapat diintegrasikan dengan data real-time untuk pemantauan berkelanjutan di Desa Cikembar.
     """)
     
-    st.image("https://via.placeholder.com/800x400?text=Desa+Cikembar")  # Placeholder image
+    # Placeholder image (opsional, bisa diganti dengan gambar real)
+    st.image("https://via.placeholder.com/800x400?text=Desa+Cikembar")
 
 # Halaman 2: Pelatihan Model
 elif page == "Pelatihan Model":
@@ -128,7 +127,7 @@ elif page == "Pelatihan Model":
     else:
         model, le = load_model()
         if model is not None:
-            st.info("Model sudah tersedia dari pelatihan sebelumnya. Akurasi: (Hitung ulang jika diperlukan).")
+            st.info("Model sudah tersedia dari pelatihan sebelumnya.")
         else:
             st.warning("Belum ada model yang dilatih. Tekan tombol untuk melatih.")
 
@@ -177,11 +176,12 @@ elif page == "Prediksi Hasil":
         
         # Contoh prediksi batch (opsional)
         st.subheader("Contoh Prediksi untuk Beberapa Warga")
-        sample_data = load_data().sample(5)
-        sample_X = sample_data[['usia_kepala_keluarga', 'pendapatan_bulanan', 'jumlah_anggota_keluarga', 'memiliki_rumah_encoded']]
+        df = load_data()
+        df['memiliki_rumah_encoded'] = le_rumah.transform(df['memiliki_rumah'])
+        sample_X = df[['usia_kepala_keluarga', 'pendapatan_bulanan', 'jumlah_anggota_keluarga', 'memiliki_rumah_encoded']]
         sample_pred = model.predict(sample_X)
         sample_prob = model.predict_proba(sample_X)
-        sample_df = sample_data.copy()
+        sample_df = df.copy()
         sample_df['Prediksi'] = ['Berhak' if p == 1 else 'Tidak Berhak' for p in sample_pred]
         sample_df['Prob Berhak'] = [f"{prob[1]:.2%}" for prob in sample_prob]
         st.dataframe(sample_df[['usia_kepala_keluarga', 'pendapatan_bulanan', 'jumlah_anggota_keluarga', 'memiliki_rumah', 'Prediksi', 'Prob Berhak']])
