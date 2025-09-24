@@ -2,10 +2,7 @@ import streamlit as st
 import pandas as pd
 import joblib
 import os
-from sklearn.naive_bayes import GaussianNB
-from sklearn.preprocessing import LabelEncoder
 
-# === KONFIGURASI APLIKASI ===
 st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
 
 MODEL_FILE = "model_bansos.pkl"
@@ -13,21 +10,15 @@ HISTORY_FILE = "riwayat.csv"
 
 # ===== DASHBOARD =====
 def halaman_dashboard():
-    st.title("📊 Dashboard Sistem Klasifikasi Bantuan Sosial")
+    st.title("📊 Dashboard")
     st.write("""
-    Sistem ini dibuat untuk membantu Desa Cikembar dalam menentukan siapa yang **berhak**
-    dan siapa yang **belum layak** menerima **Bantuan Sosial** menggunakan algoritma
-    **Naive Bayes**.
-    
-    ### Tujuan
-    - Membantu perangkat desa dalam pengambilan keputusan.
-    - Meningkatkan transparansi penyaluran bantuan.
-    - Mengurangi kesalahan subjektif.
+    Sistem ini digunakan untuk klasifikasi penerima bantuan sosial di Desa Cikembar
+    menggunakan algoritma **Naive Bayes**.
 
-    ### Manfaat
-    - Cepat dalam klasifikasi penerima.
-    - Data dapat dikelola dan diupdate.
-    - Riwayat prediksi tersimpan otomatis.
+    ### Halaman
+    - **Dashboard** → Informasi sistem
+    - **Prediksi** → Prediksi manual atau upload file (CSV/Excel)
+    - **Riwayat Prediksi** → Melihat histori prediksi
     """)
 
 # ===== SIMPAN RIWAYAT =====
@@ -42,7 +33,7 @@ def halaman_prediksi():
     st.title("🔮 Prediksi Penerima Bantuan Sosial")
 
     if not os.path.exists(MODEL_FILE):
-        st.warning("⚠️ Model belum tersedia. Silakan latih model dulu secara lokal dan upload ke folder.")
+        st.warning("⚠️ Model belum ada. Silakan latih model dulu dan simpan sebagai `model_bansos.pkl`.")
         return
 
     model_data = joblib.load(MODEL_FILE)
@@ -74,7 +65,12 @@ def halaman_prediksi():
             simpan_riwayat(df_hist)
 
     else:
-        file_data = st.file_uploader("📂 Upload file CSV/Excel", type=["csv", "xlsx", "xls"])
+        # === INI BAGIAN UPLOAD FILE ===
+        file_data = st.file_uploader(
+            "📂 Upload file CSV/Excel", 
+            type=["csv", "xlsx", "xls"]
+        )
+
         if file_data is not None:
             try:
                 if file_data.name.endswith(".csv"):
@@ -95,12 +91,14 @@ def halaman_prediksi():
                 st.success("✅ Prediksi selesai")
                 st.dataframe(df_new)
 
-                simpan_riwayat(df_new[["Nama", "Pekerjaan", "Pendidikan", "Penghasilan", "Tanggungan", "Hasil Prediksi"]])
+                simpan_riwayat(
+                    df_new[["Nama", "Pekerjaan", "Pendidikan", "Penghasilan", "Tanggungan", "Hasil Prediksi"]]
+                )
 
             except Exception as e:
                 st.error(f"Gagal membaca file: {e}")
 
-# ===== RIWAYAT PREDIKSI =====
+# ===== RIWAYAT =====
 def halaman_riwayat():
     st.title("📜 Riwayat Prediksi")
     if os.path.exists(HISTORY_FILE):
@@ -109,7 +107,7 @@ def halaman_riwayat():
     else:
         st.info("Belum ada riwayat prediksi.")
 
-# ===== MAIN MENU =====
+# ===== MENU =====
 menu = st.sidebar.radio("Navigasi", ["Dashboard", "Prediksi", "Riwayat Prediksi"])
 
 if menu == "Dashboard":
