@@ -4,36 +4,55 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score
 import io
 
-# =============================
-# Konfigurasi halaman
-# =============================
 st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
 
-# =============================
-# State awal
-# =============================
-if "dataset" not in st.session_state:
-    st.session_state.dataset = None
-if "model" not in st.session_state:
-    st.session_state.model = None
-if "le_target" not in st.session_state:
-    st.session_state.le_target = None
+# ================================
+# Fungsi Alasan Prediksi
+# ================================
+def alasan_bansos_row(row):
+    """Menentukan alasan mengapa seseorang Layak / Tidak Layak"""
+    if row["Keterangan_Layak"] == "Layak":
+        alasan = []
+        if row["Pendapatan_Bulanan"] < 1500000:
+            alasan.append(f"Pendapatan rendah (Rp {row['Pendapatan_Bulanan']:,})")
+        if row["Jumlah_Anggota_Keluarga"] >= 5:
+            alasan.append(f"Tanggungan keluarga besar ({row['Jumlah_Anggota_Keluarga']} orang)")
+        if row["Kepemilikan_Rumah"] == "Tidak":
+            alasan.append("Tidak memiliki rumah pribadi")
+        if not alasan:
+            alasan.append("Kondisi ekonomi terbatas")
+        return ", ".join(alasan) + " → Layak menerima bansos."
+    else:
+        alasan = []
+        if row["Pendapatan_Bulanan"] >= 1500000:
+            alasan.append(f"Pendapatan cukup tinggi (Rp {row['Pendapatan_Bulanan']:,})")
+        if row["Jumlah_Anggota_Keluarga"] < 5:
+            alasan.append(f"Tanggungan keluarga kecil ({row['Jumlah_Anggota_Keluarga']} orang)")
+        if row["Kepemilikan_Rumah"] == "Ya":
+            alasan.append("Sudah memiliki rumah pribadi")
+        if not alasan:
+            alasan.append("Kondisi ekonomi memadai")
+        return ", ".join(alasan) + " → Tidak Layak menerima bansos."
 
-# =============================
-# Fungsi
-# =============================
+# ================================
+# Fungsi Training Model
+# ================================
 def train_model(df):
-    """Latih model Naive Bayes dari dataset"""
-    # Encode target
-    le_target = LabelEncoder()
-    df["Status_encoded"] = le_target.fit_transform(df["Status_Kesejahteraan"])
+    df = df.copy()
 
-    # Fitur sederhana (bisa dikembangkan)
-    X = df[["Usia_Kepala_Keluarga", "Pendapatan_Bulanan", "Jumlah_Anggota_Keluarga"]]
-    y = df["Status_encoded"]
+    # Encode kolom
+    le_rumah = LabelEncoder()
+    le_target = LabelEncoder()
+
+    df["Kepemilikan_Rumah_encoded"] = le_rumah.fit_transform(df["Kepemilikan_Rumah"])
+    df["Status_Kesejahteraan_encoded"] = le_target.fit_transform(df["Status_Kesejahteraan"])
+
+    X = df[["Usia_Kepala_Keluarga", "Pendapatan_Bulanan",
+            "Jumlah_Anggota_Keluarga", "Kepemilikan_Rumah_encoded"]]
+    y = df["Status_Kesejahteraan_encoded"]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -42,150 +61,124 @@ def train_model(df):
     model = GaussianNB()
     model.fit(X_train, y_train)
 
-    y_pred = model.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
-    report = classification_report(y_test, y_pred, target_names=le_target.classes_)
+    acc = accuracy_score(y_test, model.predict(X_test))
 
-    return model, le_target, acc, report
+    return model, le_rumah, le_target, acc
 
+# ================================
+# Sidebar
+# ================================
+st.sidebar.title("Navigasi Sistem")
+page = st.sidebar.radio("Pilih Halaman:", ["Dashboard", "Upload & Prediksi", "Daftar Penerima Bansos"])
 
-def klasifikasi_bansos(status):
-    mapping = {
-        "Miskin": "Layak",
-        "Rentan Miskin": "Layak",
-        "Sejahtera": "Tidak Layak",
-        "Sangat Sejahtera": "Tidak Layak",
-    }
-    return mapping.get(status, "Tidak Diketahui")
-
-
-def alasan_bansos(status):
-    if status in ["Miskin", "Rentan Miskin"]:
-        return "Kondisi ekonomi lemah, sehingga Layak mendapat bansos"
-    elif status in ["Sejahtera", "Sangat Sejahtera"]:
-        return "Kondisi ekonomi mencukupi, sehingga Tidak Layak mendapat bansos"
-    else:
-        return "Tidak diketahui"
-
-
-# =============================
-# Sidebar Navigasi
-# =============================
-st.sidebar.title("Navigasi")
-page = st.sidebar.radio(
-    "Pilih Halaman", ["🏠 Dashboard", "📂 Upload & Prediksi", "✅ Daftar Penerima"]
-)
-
-# =============================
-# Halaman Dashboard
-# =============================
-if page == "🏠 Dashboard":
+# ================================
+# Dashboard
+# ================================
+if page == "Dashboard":
     st.title("🏠 Dashboard Informasi")
+    st.subheader("Klasifikasi Penerima Bantuan Sosial Desa Cikembar")
     st.markdown("---")
-    if st.session_state.dataset is not None:
-        st.success(f"Dataset terupload dengan {len(st.session_state.dataset)} data")
-    else:
-        st.warning("Belum ada dataset yang diupload")
 
-    if st.session_state.model:
-        st.success("Model Naive Bayes sudah dilatih ✅")
-    else:
-        st.warning("Model belum dilatih ❌")
+    st.markdown("""
+    Sistem ini menggunakan **Naive Bayes** untuk mengklasifikasikan warga desa apakah **Layak** atau **Tidak Layak**
+    menerima bantuan sosial.  
 
-# =============================
-# Halaman Upload & Prediksi
-# =============================
-elif page == "📂 Upload & Prediksi":
-    st.title("📂 Upload Dataset & Prediksi Otomatis")
+    **Fitur yang digunakan:**
+    - Usia Kepala Keluarga
+    - Pendapatan Bulanan
+    - Jumlah Anggota Keluarga
+    - Kepemilikan Rumah
+    """)
 
-    uploaded_file = st.file_uploader("Upload file CSV atau Excel", type=["csv", "xlsx", "xls"])
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
+# ================================
+# Upload & Prediksi
+# ================================
+elif page == "Upload & Prediksi":
+    st.title("📁 Upload Dataset & Prediksi")
 
-            # Pastikan kolom ada
-            required = [
-                "Nama",
-                "Usia_Kepala_Keluarga",
-                "Pendapatan_Bulanan",
-                "Jumlah_Anggota_Keluarga",
-                "Status_Kesejahteraan",
-            ]
-            if not all(col in df.columns for col in required):
-                st.error(f"Dataset harus memiliki kolom: {required}")
-            else:
-                st.session_state.dataset = df
+    uploaded_file = st.file_uploader("Upload dataset penduduk (Excel/CSV)", type=["csv", "xlsx"])
+    if uploaded_file:
+        if uploaded_file.name.endswith("csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
 
-                st.write("### Contoh Data Awal")
-                st.dataframe(df.head())
+        st.success("✅ Dataset berhasil diupload")
+        st.dataframe(df.head())
 
-                if st.button("🚀 Latih Model"):
-                    model, le_target, acc, report = train_model(df)
-                    st.session_state.model = model
-                    st.session_state.le_target = le_target
+        # Latih model
+        model, le_rumah, le_target, acc = train_model(df)
+        st.info(f"Model dilatih dengan akurasi: **{acc:.2f}**")
 
-                    st.success(f"Model berhasil dilatih dengan akurasi: {acc:.2f}")
-                    st.text("Classification Report:")
-                    st.text(report)
+        # Prediksi otomatis
+        df["Kepemilikan_Rumah_encoded"] = le_rumah.transform(df["Kepemilikan_Rumah"])
+        X_all = df[["Usia_Kepala_Keluarga", "Pendapatan_Bulanan",
+                    "Jumlah_Anggota_Keluarga", "Kepemilikan_Rumah_encoded"]]
+        y_pred = model.predict(X_all)
+        df["Prediksi_Status"] = le_target.inverse_transform(y_pred)
 
-                if st.session_state.model:
-                    # Prediksi otomatis untuk semua data
-                    X_all = df[
-                        ["Usia_Kepala_Keluarga", "Pendapatan_Bulanan", "Jumlah_Anggota_Keluarga"]
-                    ]
-                    pred_encoded = st.session_state.model.predict(X_all)
-                    pred_labels = st.session_state.le_target.inverse_transform(pred_encoded)
+        # Mapping Layak / Tidak Layak
+        mapping = {
+            "Miskin": "Layak",
+            "Rentan Miskin": "Layak",
+            "Sejahtera": "Tidak Layak",
+            "Sangat Sejahtera": "Tidak Layak"
+        }
+        df["Keterangan_Layak"] = df["Prediksi_Status"].map(mapping)
 
-                    df["Prediksi_Status"] = pred_labels
-                    df["Keterangan_Layak"] = df["Prediksi_Status"].apply(klasifikasi_bansos)
-                    df["Keterangan_Alasan"] = df["Prediksi_Status"].apply(alasan_bansos)
+        # Alasan Prediksi
+        df["Keterangan_Alasan"] = df.apply(alasan_bansos_row, axis=1)
 
-                    st.write("### Hasil Prediksi Otomatis")
-                    st.dataframe(df[["Nama", "Prediksi_Status", "Keterangan_Layak", "Keterangan_Alasan"]])
+        st.subheader("📊 Hasil Prediksi")
+        st.dataframe(df[["Nama", "Prediksi_Status", "Keterangan_Layak", "Keterangan_Alasan"]])
 
-                    # Simpan ke state
-                    st.session_state.dataset = df
+        # Download hasil
+        buffer = io.BytesIO()
+        df.to_excel(buffer, index=False, engine="openpyxl")
+        buffer.seek(0)
+        st.download_button("📥 Download Hasil Prediksi", buffer,
+                           file_name="hasil_prediksi_bansos.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-                    # Download hasil
-                    output = io.BytesIO()
-                    df.to_excel(output, index=False, engine="openpyxl")
-                    output.seek(0)
-                    st.download_button(
-                        label="📥 Download Hasil Prediksi Excel",
-                        data=output,
-                        file_name="hasil_prediksi_bansos.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
+# ================================
+# Daftar Penerima Bansos
+# ================================
+elif page == "Daftar Penerima Bansos":
+    st.title("📋 Daftar Penerima Bansos")
 
-        except Exception as e:
-            st.error(f"Terjadi error saat membaca file: {e}")
+    uploaded_file = st.file_uploader("Upload dataset untuk lihat penerima bansos", type=["csv", "xlsx"], key="daftar")
+    if uploaded_file:
+        if uploaded_file.name.endswith("csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
 
-# =============================
-# Halaman Daftar Penerima
-# =============================
-elif page == "✅ Daftar Penerima":
-    st.title("✅ Daftar Warga Layak Menerima Bansos")
+        # Latih & Prediksi
+        model, le_rumah, le_target, acc = train_model(df)
+        df["Kepemilikan_Rumah_encoded"] = le_rumah.transform(df["Kepemilikan_Rumah"])
+        X_all = df[["Usia_Kepala_Keluarga", "Pendapatan_Bulanan",
+                    "Jumlah_Anggota_Keluarga", "Kepemilikan_Rumah_encoded"]]
+        y_pred = model.predict(X_all)
+        df["Prediksi_Status"] = le_target.inverse_transform(y_pred)
 
-    if st.session_state.dataset is None or "Keterangan_Layak" not in st.session_state.dataset.columns:
-        st.warning("Silakan upload dataset dan lakukan prediksi terlebih dahulu.")
-    else:
-        penerima = st.session_state.dataset[
-            st.session_state.dataset["Keterangan_Layak"] == "Layak"
-        ]
+        mapping = {
+            "Miskin": "Layak",
+            "Rentan Miskin": "Layak",
+            "Sejahtera": "Tidak Layak",
+            "Sangat Sejahtera": "Tidak Layak"
+        }
+        df["Keterangan_Layak"] = df["Prediksi_Status"].map(mapping)
+        df["Keterangan_Alasan"] = df.apply(alasan_bansos_row, axis=1)
 
-        st.write("### Daftar Penerima Bansos")
+        penerima = df[df["Keterangan_Layak"] == "Layak"]
+
+        st.success(f"Total penerima bansos: **{len(penerima)} orang**")
         st.dataframe(penerima[["Nama", "Prediksi_Status", "Keterangan_Alasan"]])
 
-        # Download penerima saja
-        output = io.BytesIO()
-        penerima.to_excel(output, index=False, engine="openpyxl")
-        output.seek(0)
-        st.download_button(
-            label="📥 Download Daftar Penerima Saja",
-            data=output,
-            file_name="daftar_penerima_bansos.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+        # Download penerima
+        buffer = io.BytesIO()
+        penerima.to_excel(buffer, index=False, engine="openpyxl")
+        buffer.seek(0)
+        st.download_button("📥 Download Daftar Penerima", buffer,
+                           file_name="daftar_penerima_bansos.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
