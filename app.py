@@ -27,7 +27,7 @@ if menu == "🏠 Home":
     st.markdown("""
     Selamat datang di sistem klasifikasi penerima bantuan sosial.  
     Gunakan menu di sidebar untuk:
-    - 📊 **Pelatihan Model** → upload dataset, pilih label & fitur, latih model.
+    - 📊 **Pelatihan Model** → upload dataset dan otomatis latih model.
     - 🔮 **Prediksi Data Baru** → uji model dengan data input manual.
     """)
 
@@ -61,61 +61,54 @@ elif menu == "📊 Pelatihan Model":
         df.info(buf=buffer)
         st.text(buffer.getvalue())
 
-        # Pilih kolom target
-        target_col = st.selectbox("🎯 Pilih kolom target (label)", df.columns)
+        # Otomatis ambil kolom target (kolom terakhir)
+        target_col = df.columns[-1]
+        feature_cols = df.columns[:-1].tolist()
 
-        # Pilih fitur
-        feature_cols = st.multiselect(
-            "🧩 Pilih kolom fitur (predictors)",
-            [c for c in df.columns if c != target_col]
-        )
+        st.write(f"🎯 Kolom target otomatis dipilih: **{target_col}**")
+        st.write(f"🧩 Fitur otomatis dipilih: {feature_cols}")
 
-        if st.button("🚀 Latih Model"):
-            if not feature_cols or not target_col:
-                st.error("Pilih fitur dan target terlebih dahulu!")
-                st.stop()
+        X = df[feature_cols]
+        y = df[target_col]
 
-            X = df[feature_cols]
-            y = df[target_col]
+        # Split data
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+        except ValueError:
+            st.warning("⚠️ Stratify gagal karena ada kelas dengan jumlah terlalu sedikit. Data dibagi tanpa stratify.")
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
 
-            # Split data
-            try:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42, stratify=y
-                )
-            except ValueError:
-                st.warning("⚠️ Stratify gagal karena ada kelas dengan jumlah terlalu sedikit. Data dibagi tanpa stratify.")
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=0.2, random_state=42
-                )
+        # Pisahkan numerik & kategorikal
+        num_cols = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
+        cat_cols = X.select_dtypes(include=["object"]).columns.tolist()
 
-            # Pisahkan numerik & kategorikal
-            num_cols = X.select_dtypes(include=["int64", "float64"]).columns.tolist()
-            cat_cols = X.select_dtypes(include=["object"]).columns.tolist()
+        preprocessor = ColumnTransformer([
+            ("num", StandardScaler(), num_cols),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)
+        ])
 
-            preprocessor = ColumnTransformer([
-                ("num", StandardScaler(), num_cols),
-                ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols)
-            ])
+        model = Pipeline([
+            ("preprocess", preprocessor),
+            ("clf", GaussianNB())
+        ])
 
-            model = Pipeline([
-                ("preprocess", preprocessor),
-                ("clf", GaussianNB())
-            ])
+        # Train
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
 
-            # Train
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
 
-            acc = accuracy_score(y_test, y_pred)
+        st.success(f"✅ Akurasi Model: {acc:.2f}")
+        st.text("Laporan Klasifikasi:")
+        st.text(classification_report(y_test, y_pred))
 
-            st.success(f"✅ Akurasi Model: {acc:.2f}")
-            st.text("Laporan Klasifikasi:")
-            st.text(classification_report(y_test, y_pred))
-
-            # Simpan model di session
-            st.session_state["model"] = model
-            st.session_state["features"] = feature_cols
+        # Simpan model di session
+        st.session_state["model"] = model
+        st.session_state["features"] = feature_cols
 
 # ================================
 # Halaman 3: Prediksi Data Baru
