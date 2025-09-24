@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import io
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.impute import SimpleImputer
@@ -16,8 +17,10 @@ st.title("📊 Pelatihan Model Naïve Bayes")
 st.write("Upload file dataset untuk klasifikasi penerima bantuan sosial di Desa Cikembar.")
 
 # Upload dataset
-uploaded_file = st.file_uploader("Upload file CSV atau Excel (.csv / .xls / .xlsx)",
-                                 type=["csv", "xls", "xlsx"])
+uploaded_file = st.file_uploader(
+    "Upload file CSV atau Excel (.csv / .xls / .xlsx)",
+    type=["csv", "xls", "xlsx"]
+)
 
 if uploaded_file:
     # baca dataset
@@ -30,9 +33,11 @@ if uploaded_file:
     st.dataframe(df.head())
 
     st.subheader("ℹ️ Info singkat dataset")
-    buffer = []
+    buffer = io.StringIO()
     df.info(buf=buffer)
-    st.text("\n".join(buffer))
+    info_str = buffer.getvalue()
+    st.text(info_str)
+
     st.write("Jumlah data:", df.shape[0])
     st.write("Jumlah kolom:", df.shape[1])
     st.write("Jumlah missing value tiap kolom:")
@@ -47,7 +52,9 @@ if uploaded_file:
         invalid_classes = class_counts[class_counts < 2]
 
         if len(invalid_classes) > 0:
-            st.error(f"Kolom target **{target_col}** tidak valid karena ada kelas dengan jumlah < 2: \n{invalid_classes}")
+            st.error(
+                f"Kolom target **{target_col}** tidak valid karena ada kelas dengan jumlah < 2:\n\n{invalid_classes}"
+            )
             st.stop()
 
         # pilih fitur
@@ -93,9 +100,17 @@ if uploaded_file:
             ])
 
             # split data
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.3, random_state=42, stratify=y
-            )
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.3, random_state=42, stratify=y
+                )
+            except ValueError:
+                st.warning(
+                    "Stratify gagal karena ada kelas dengan jumlah terlalu sedikit. Data dibagi tanpa stratify."
+                )
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.3, random_state=42
+                )
 
             # fit model
             model.fit(X_train, y_train)
@@ -112,10 +127,15 @@ if uploaded_file:
             st.subheader("📌 Confusion Matrix")
             cm = confusion_matrix(y_test, y_pred)
             fig, ax = plt.subplots()
-            sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                        xticklabels=model.classes_,
-                        yticklabels=model.classes_,
-                        ax=ax)
+            sns.heatmap(
+                cm,
+                annot=True,
+                fmt="d",
+                cmap="Blues",
+                xticklabels=model.classes_,
+                yticklabels=model.classes_,
+                ax=ax
+            )
             ax.set_xlabel("Predicted")
             ax.set_ylabel("Actual")
             st.pyplot(fig)
