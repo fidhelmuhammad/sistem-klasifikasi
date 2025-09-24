@@ -8,6 +8,7 @@ from sklearn.preprocessing import LabelEncoder
 import pickle
 import os
 from datetime import datetime
+import io  # Untuk handling download Excel
 
 # Konfigurasi halaman
 st.set_page_config(page_title="Klasifikasi Bantuan Sosial", layout="wide")
@@ -60,13 +61,13 @@ def train_model(data):
     
     # Pilih fitur utama (numerik dan kategorikal yang relevan)
     # Fitur: Usia, Pendapatan, Jumlah Anggota, Kepemilikan Rumah
-    # Target: Status_Kesejahteraan (encode ke 0/1: Layak=1, Tidak Layak=0)
+    # Target: Status_Kesejahteraan (encode ke 0/1: Layak=0, Tidak Layak=1 berdasarkan LabelEncoder)
     
     # Encoding untuk Kepemilikan_Rumah
     le_rumah = LabelEncoder()
     df['Kepemilikan_Rumah_encoded'] = le_rumah.fit_transform(df['Kepemilikan_Rumah'])
     
-    # Encoding untuk target
+    # Encoding untuk target (Layak=0, Tidak Layak=1 secara alfabetis)
     le_target = LabelEncoder()
     df['Status_Kesejahteraan_encoded'] = le_target.fit_transform(df['Status_Kesejahteraan'])
     
@@ -95,7 +96,7 @@ def predict_single(model, le_rumah, le_target, data):
     input_data = np.array([[data['usia'], data['pendapatan'], data['jumlah_anggota'], rumah_encoded]])
     
     prediksi_encoded = model.predict(input_data)[0]
-    prob = model.predict_proba(input_data)[0]
+    prob = model.predict_proba(input_data)[0]  # [prob_Layak (0), prob_Tidak Layak (1)]
     
     # Decode prediksi
     prediksi = le_target.inverse_transform([prediksi_encoded])[0]
@@ -236,9 +237,15 @@ elif page == "Upload Dataset & Prediksi":
                 file_name='contoh_dataset_cikembar.csv',
                 mime='text/csv'
             )
+            
+            # Download Excel menggunakan BytesIO
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                dummy_df.to_excel(writer, index=False, sheet_name='Data Warga')
+            buffer.seek(0)
             st.download_button(
                 label="📥 Download Contoh Dataset Excel",
-                data=dummy_df.to_excel(index=False).encode(),
+                data=buffer.getvalue(),
                 file_name='contoh_dataset_cikembar.xlsx',
                 mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
@@ -274,7 +281,7 @@ elif page == "Upload Dataset & Prediksi":
                     'tanggal': datetime.now().strftime("%Y-%m-%d %H:%M"),
                     'data': data_input,
                     'prediksi': prediksi,
-                    'probabilitas': prob
+                    'probabilitas': prob  # [prob_Layak, prob_Tidak Layak]
                 }
                 st.session_state.riwayat_prediksi.append(riwayat)
                 
@@ -282,7 +289,7 @@ elif page == "Upload Dataset & Prediksi":
                 st.markdown("---")
                 st.header("🎯 Hasil Prediksi")
                 
-                if 'Layak' in str(prediksi):
+                if prediksi == 'Layak':
                     st.success("✅ **LAYAK MENERIMA BANTUAN SOSIAL**")
                     st.write("Warga ini layak mendapatkan bantuan berdasarkan kriteria yang dianalisis.")
                 else:
@@ -291,9 +298,9 @@ elif page == "Upload Dataset & Prediksi":
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Probabilitas Layak", f"{prob[1]:.2%}" if len(prob) > 1 else f"{prob[0]:.2%}")
+                    st.metric("Probabilitas Layak", f"{prob[0]:.2%}")
                 with col2:
-                    st.metric("Probabilitas Tidak Layak", f"{prob[0]:.2%}" if len(prob) > 1 else f"{prob[1]:.2%}")
+                    st.metric("Probabilitas Tidak Layak", f"{prob[1]:.2%}")
                 
                 st.info("💡 Hasil prediksi telah disimpan di riwayat")
 
@@ -315,11 +322,4 @@ elif page == "Riwayat Prediksi":
                     st.write(f"Usia: {riwayat['data']['usia']} tahun")
                     st.write(f"Pendapatan: Rp {riwayat['data']['pendapatan']:,}")
                     st.write(f"Jumlah Anggota: {riwayat['data']['jumlah_anggota']} orang")
-                    st.write(f"Kepemilikan Rumah: {riwayat['data']['kepemilikan_rumah']}")
-                
-                with col2:
-                    st.write("**Hasil Prediksi:**")
-                    if 'Layak' in str(riwayat['prediksi']):
-                        st.success("LAYAK MENERIMA BANTUAN")
-                    else:
-                        st.error("TIDAK LAYAK
+                    st.write(f"Kepemilikan Rumah: {ri
